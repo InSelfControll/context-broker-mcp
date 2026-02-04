@@ -7,8 +7,9 @@ This module defines the interface between the AI and the codebase search functio
 
 import os
 from typing import Any
+from pathlib import Path
 
-from fastmcp import FastMCP
+from fastmcp import FastMCP, Context
 
 from context_broker.config import StorageMode, STORAGE_MODE, DEFAULT_QUERY
 from context_broker.indexer import search_codebase, get_index_for_project
@@ -33,7 +34,7 @@ def create_mcp_server() -> FastMCP:
     # =============================================================================
     
     @mcp.tool()
-    def search_codebase_tool(query: str, project_root: str = "") -> str:
+    async def search_codebase_tool(query: str, project_root: str = "", ctx: Context = None) -> str:
         """
         Search the codebase using semantic similarity.
         
@@ -49,15 +50,29 @@ def create_mcp_server() -> FastMCP:
         Returns:
             Formatted string with relevant file contents and token statistics
         """
+        # Log tool call for client visibility
+        root_display = project_root if project_root else "[auto-detected]"
+        log(f"🔍 search_codebase_tool called: query='{query[:50]}...', project_root='{root_display}'")
+        
+        if ctx:
+            await ctx.info(f"🔍 Searching codebase for: '{query[:60]}...'")
+        
         root = resolve_project_root(project_root)
         
         try:
+            if ctx:
+                await ctx.info(f"📁 Project root resolved to: {root}")
+            
             result = search_codebase(query, root, top_k=5)
+            
+            if ctx:
+                await ctx.info(f"✅ Found {result['returned_files']} files, saved {result['saved_percent']:.1f}% tokens")
             
             # Format results with token statistics
             lines = [
                 f"🔍 Search Results for: '{result['query']}'",
                 f"📁 Project: {result['project']}",
+                f"📂 Project Root: {result['project_root']}",
                 f"📊 Found {result['returned_files']} relevant files (out of {result['total_files']} total)",
                 "",
                 "📈 Token Efficiency Report:",
@@ -77,11 +92,14 @@ def create_mcp_server() -> FastMCP:
             return "\n".join(lines)
             
         except Exception as e:
-            log(f"❌ Search error: {e}", "ERROR")
+            error_msg = f"❌ Search error: {e}"
+            log(error_msg, "ERROR")
+            if ctx:
+                await ctx.error(error_msg)
             return f"Error: {str(e)}"
     
     @mcp.tool()
-    def auto_search(project_root: str = "") -> str:
+    async def auto_search(project_root: str = "", ctx: Context = None) -> str:
         """
         Automatically search codebase for main entry points, configuration, and setup.
         
@@ -97,6 +115,12 @@ def create_mcp_server() -> FastMCP:
         Returns:
             Formatted string with relevant files for understanding the project
         """
+        root_display = project_root if project_root else "[auto-detected]"
+        log(f"🚀 auto_search called: project_root='{root_display}'")
+        
+        if ctx:
+            await ctx.info("🚀 Auto-searching for project entry points and configuration...")
+        
         root = resolve_project_root(project_root)
         
         try:
@@ -106,8 +130,12 @@ def create_mcp_server() -> FastMCP:
                 top_k=5
             )
             
+            if ctx:
+                await ctx.info(f"✅ Found {result['returned_files']} files for project overview")
+            
             lines = [
                 f"🚀 Auto-Context for Project: {result['project']}",
+                f"📂 Project Root: {result['project_root']}",
                 f"📊 Found {result['returned_files']} relevant files",
                 "",
                 "📈 Token Efficiency Report:",
@@ -127,16 +155,20 @@ def create_mcp_server() -> FastMCP:
             return "\n".join(lines)
             
         except Exception as e:
-            log(f"❌ Auto-search error: {e}", "ERROR")
+            error_msg = f"❌ Auto-search error: {e}"
+            log(error_msg, "ERROR")
+            if ctx:
+                await ctx.error(error_msg)
             return f"Error: {str(e)}"
     
     @mcp.tool()
-    def save_search_results(
+    async def save_search_results(
         query: str = "",
         filename: str = "",
         project_root: str = "",
         subdir: str = "",
-        top_k: int = 5
+        top_k: int = 5,
+        ctx: Context = None
     ) -> str:
         """
         Search the codebase and save results to a JSON file.
@@ -158,15 +190,10 @@ def create_mcp_server() -> FastMCP:
             
         Returns:
             Path to the saved file
-            
-        Example:
-            save_search_results(
-                query="authentication middleware",
-                filename="auth-middleware.json",
-                subdir="api"
-            )
-            # Saves to: ~/.context-broker/my-project/api/auth-middleware.json
         """
+        if ctx:
+            await ctx.info(f"💾 Saving search results for: '{query[:50]}...'")
+        
         if not query:
             return "❌ Error: query is required"
         if not filename:
@@ -175,9 +202,14 @@ def create_mcp_server() -> FastMCP:
         root = resolve_project_root(project_root)
         project_name = get_project_name(root)
         
+        log(f"💾 save_search_results called: query='{query[:50]}...', filename='{filename}', project='{project_name}'")
+        
         try:
             # Perform search
             result = search_codebase(query, root, top_k)
+            
+            if ctx:
+                await ctx.info(f"📊 Found {len(result['results'])} files to save")
             
             # Create save data structure
             data = {
@@ -208,17 +240,27 @@ def create_mcp_server() -> FastMCP:
                 project_name, filename, data, subdir, root
             )
             
-            return f"✅ Saved {len(result['results'])} files to: {filepath}"
+            success_msg = f"✅ Saved {len(result['results'])} files to: {filepath}"
+            log(success_msg)
+            
+            if ctx:
+                await ctx.info(success_msg)
+            
+            return success_msg
             
         except Exception as e:
-            log(f"❌ Save error: {e}", "ERROR")
-            return f"❌ Error saving results: {str(e)}"
+            error_msg = f"❌ Error saving results: {e}"
+            log(error_msg, "ERROR")
+            if ctx:
+                await ctx.error(error_msg)
+            return error_msg
     
     @mcp.tool()
-    def list_saved_results(
+    async def list_saved_results(
         project_name: str,
         subdir: str = "",
-        project_root: str = ""
+        project_root: str = "",
+        ctx: Context = None
     ) -> str:
         """
         List all saved JSON results for a project.
@@ -231,6 +273,11 @@ def create_mcp_server() -> FastMCP:
         Returns:
             Formatted list of saved files with storage locations
         """
+        log(f"📋 list_saved_results called: project_name='{project_name}', subdir='{subdir}'")
+        
+        if ctx:
+            await ctx.info(f"📋 Listing saved results for project: {project_name}")
+        
         if not project_name:
             return "❌ Error: project_name is required"
         
@@ -239,7 +286,9 @@ def create_mcp_server() -> FastMCP:
             
             if not files:
                 subdir_msg = f" in '{subdir}'" if subdir else ""
-                return f"📭 No saved results found for project '{project_name}'{subdir_msg}."
+                msg = f"📭 No saved results found for project '{project_name}'{subdir_msg}."
+                log(msg)
+                return msg
             
             lines = [
                 f"📁 Saved Results for: {project_name}",
@@ -253,18 +302,25 @@ def create_mcp_server() -> FastMCP:
             lines.append("")
             lines.append(f"Total: {len(files)} files")
             
-            return "\n".join(lines)
+            result = "\n".join(lines)
+            log(f"📋 Found {len(files)} saved results")
+            
+            return result
             
         except Exception as e:
-            log(f"❌ List error: {e}", "ERROR")
-            return f"❌ Error listing results: {str(e)}"
+            error_msg = f"❌ Error listing results: {e}"
+            log(error_msg, "ERROR")
+            if ctx:
+                await ctx.error(error_msg)
+            return error_msg
     
     @mcp.tool()
-    def load_saved_results(
+    async def load_saved_results(
         project_name: str,
         filename: str,
         subdir: str = "",
-        project_root: str = ""
+        project_root: str = "",
+        ctx: Context = None
     ) -> str:
         """
         Load previously saved search results.
@@ -280,6 +336,11 @@ def create_mcp_server() -> FastMCP:
         Returns:
             The saved search results with file contents
         """
+        log(f"📂 load_saved_results called: project_name='{project_name}', filename='{filename}'")
+        
+        if ctx:
+            await ctx.info(f"📂 Loading saved results: {filename}")
+        
         if not project_name:
             return "❌ Error: project_name is required"
         if not filename:
@@ -292,7 +353,12 @@ def create_mcp_server() -> FastMCP:
                 hint = ""
                 if STORAGE_MODE == StorageMode.IN_PROJECT and not project_root:
                     hint = "\n💡 Hint: In 'in-project' mode, you need to provide project_root"
-                return f"❌ File not found: {filename}{hint}"
+                msg = f"❌ File not found: {filename}{hint}"
+                log(msg, "WARN")
+                return msg
+            
+            if ctx:
+                await ctx.info(f"✅ Loaded {data.get('file_count', 0)} files from {filename}")
             
             # Format the results with statistics
             stats = data.get('statistics', {})
@@ -327,11 +393,14 @@ def create_mcp_server() -> FastMCP:
             return "\n".join(lines)
             
         except Exception as e:
-            log(f"❌ Load error: {e}", "ERROR")
-            return f"❌ Error loading results: {str(e)}"
+            error_msg = f"❌ Error loading results: {e}"
+            log(error_msg, "ERROR")
+            if ctx:
+                await ctx.error(error_msg)
+            return error_msg
     
     @mcp.tool()
-    def get_storage_config() -> str:
+    async def get_storage_config(ctx: Context = None) -> str:
         """
         Get the current storage configuration.
         
@@ -340,6 +409,11 @@ def create_mcp_server() -> FastMCP:
         Returns:
             Current storage configuration details
         """
+        log("⚙️ get_storage_config called")
+        
+        if ctx:
+            await ctx.info("⚙️ Retrieving storage configuration...")
+        
         config = get_storage_config_info()
         
         lines = [
@@ -373,7 +447,7 @@ def create_mcp_server() -> FastMCP:
     # =============================================================================
     
     @mcp.resource("codebase://auto-context")
-    def auto_context_resource() -> str:
+    async def auto_context_resource() -> str:
         """
         Automatically provides codebase context on every request.
         
@@ -383,6 +457,8 @@ def create_mcp_server() -> FastMCP:
         Returns:
             Relevant files for understanding the current project
         """
+        log("🔄 auto_context_resource called")
+        
         root = resolve_project_root()
         
         try:
@@ -390,6 +466,7 @@ def create_mcp_server() -> FastMCP:
             
             lines = [
                 f"🔄 Auto-Context: {result['project']}",
+                f"📂 Project Root: {result['project_root']}",
                 "",
                 "📈 Token Efficiency Report:",
                 f"   • Total Project Tokens: {result['total_tokens']:,}",
@@ -407,6 +484,7 @@ def create_mcp_server() -> FastMCP:
             
         except Exception as e:
             # Return empty string on error to not break the flow
+            log(f"⚠️ Auto-context error: {e}", "WARN")
             return f""
     
     # =============================================================================
