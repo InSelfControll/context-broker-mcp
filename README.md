@@ -34,6 +34,34 @@ uv sync
 pip install -e .
 ```
 
+## Understanding MCP Client Output
+
+When using Context Broker with MCP clients (Claude Desktop, Kimi CLI, etc.), you'll see:
+
+### Tool Call Notifications (Client-Side)
+
+Lines like these are shown by the MCP client, not the server:
+```
+• Used search_codebase_tool ({"query": "tracing::debug...", "project_root": "/path/to/project"})
+• Used auto_search ({})
+```
+
+These are **automatically displayed by the client** when tools are called. The Context Broker server also sends progress notifications so you can track:
+- When a search starts
+- Which project root was detected
+- How many files were found
+- Token efficiency statistics
+
+### Token Efficiency Reports (Server Response)
+
+These lines are included in the tool response:
+```
+📈 Token Efficiency Report:
+   • Total Project Tokens: 50,000
+   • Context Sent: 3,500
+   • Tokens Saved: 46,500 (93.0%)
+```
+
 ## Running the Server
 
 ### Using UV (Recommended)
