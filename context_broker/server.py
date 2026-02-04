@@ -54,11 +54,16 @@ def create_mcp_server() -> FastMCP:
         try:
             result = search_codebase(query, root, top_k=5)
             
-            # Format results
+            # Format results with token statistics
             lines = [
                 f"🔍 Search Results for: '{result['query']}'",
                 f"📁 Project: {result['project']}",
                 f"📊 Found {result['returned_files']} relevant files (out of {result['total_files']} total)",
+                "",
+                "📈 Token Efficiency Report:",
+                f"   • Total Project Tokens: {result['total_tokens']:,}",
+                f"   • Context Sent: {result['context_tokens']:,}",
+                f"   • Tokens Saved: {result['saved_tokens']:,} ({result['saved_percent']:.1f}%)",
                 "",
                 "=" * 60,
                 "",
@@ -104,6 +109,11 @@ def create_mcp_server() -> FastMCP:
             lines = [
                 f"🚀 Auto-Context for Project: {result['project']}",
                 f"📊 Found {result['returned_files']} relevant files",
+                "",
+                "📈 Token Efficiency Report:",
+                f"   • Total Project Tokens: {result['total_tokens']:,}",
+                f"   • Context Sent: {result['context_tokens']:,}",
+                f"   • Tokens Saved: {result['saved_tokens']:,} ({result['saved_percent']:.1f}%)",
                 "",
                 "=" * 60,
                 "",
@@ -284,7 +294,8 @@ def create_mcp_server() -> FastMCP:
                     hint = "\n💡 Hint: In 'in-project' mode, you need to provide project_root"
                 return f"❌ File not found: {filename}{hint}"
             
-            # Format the results
+            # Format the results with statistics
+            stats = data.get('statistics', {})
             lines = [
                 f"📋 Saved Search Results",
                 f"Project: {data.get('project', 'unknown')}",
@@ -292,9 +303,21 @@ def create_mcp_server() -> FastMCP:
                 f"Storage Mode: {data.get('storage_mode', 'unknown')}",
                 f"Files: {data.get('file_count', 0)}",
                 "",
+            ]
+            
+            if stats:
+                lines.extend([
+                    "📈 Token Efficiency Report (at time of saving):",
+                    f"   • Total Project Tokens: {stats.get('total_tokens', 0):,}",
+                    f"   • Context Sent: {stats.get('context_tokens', 0):,}",
+                    f"   • Tokens Saved: {stats.get('saved_tokens', 0):,} ({stats.get('saved_percent', 0):.1f}%)",
+                    "",
+                ])
+            
+            lines.extend([
                 "=" * 50,
                 "",
-            ]
+            ])
             
             for file_info in data.get("files", []):
                 lines.append(f"### FILE: {file_info['path']}")
@@ -367,6 +390,11 @@ def create_mcp_server() -> FastMCP:
             
             lines = [
                 f"🔄 Auto-Context: {result['project']}",
+                "",
+                "📈 Token Efficiency Report:",
+                f"   • Total Project Tokens: {result['total_tokens']:,}",
+                f"   • Context Sent: {result['context_tokens']:,}",
+                f"   • Tokens Saved: {result['saved_tokens']:,} ({result['saved_percent']:.1f}%)",
                 "",
             ]
             
