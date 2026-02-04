@@ -34,19 +34,102 @@ uv sync
 pip install -e .
 ```
 
+## Running the Server
+
+### Using UV (Recommended)
+
+```bash
+# From the project directory
+uv run python context-broker.py
+
+# Or using the module entry point
+uv run python -m context_broker
+
+# Or using the convenience script
+uv run main.py
+```
+
+### Using Python directly
+
+```bash
+# Make sure dependencies are installed first
+pip install fastmcp sentence-transformers scikit-learn numpy torch tiktoken
+
+# Run the main entry point
+python context-broker.py
+
+# Or using the module
+python -m context_broker
+
+# Or the alternative entry
+python main.py
+```
+
 ### MCP Client Configuration
 
 Add to your MCP client (Claude Desktop, Kimi CLI, etc.):
+
+#### Claude Desktop
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or equivalent:
+
+**Using UV:**
+```json
+{
+  "mcpServers": {
+    "context-broker": {
+      "command": "uv",
+      "args": ["run", "--with", "fastmcp", "python", "/full/path/to/context-broker/context-broker.py"],
+      "env": {
+        "CONTEXT_BROKER_PROJECT_ROOT": "/path/to/your/project"
+      }
+    }
+  }
+}
+```
+
+**Using Python directly:**
+```json
+{
+  "mcpServers": {
+    "context-broker": {
+      "command": "python",
+      "args": ["/full/path/to/context-broker/context-broker.py"],
+      "env": {
+        "CONTEXT_BROKER_PROJECT_ROOT": "/path/to/your/project"
+      }
+    }
+  }
+}
+```
+
+#### Kimi CLI
+
+Add to your Kimi CLI configuration file:
 
 ```json
 {
   "mcpServers": {
     "context-broker": {
       "command": "uv",
-      "args": ["run", "--with", "fastmcp", "python", "/path/to/context-broker/context-broker.py"]
+      "args": ["run", "--with", "fastmcp", "python", "/full/path/to/context-broker/context-broker.py"]
     }
   }
 }
+```
+
+### Testing the Server
+
+To verify the server is working:
+
+```bash
+# Run in one terminal
+uv run python context-broker.py
+
+# The server will start and listen for MCP protocol messages on stdin/stdout
+# You should see output like:
+# [Broker] ⚡ Indexing new project: /your/project/path
+# [Broker] ✅ Index ready. Total size: X tokens.
 ```
 
 ## Architecture Overview
