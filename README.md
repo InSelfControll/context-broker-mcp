@@ -398,11 +398,3 @@ Always excluded: `node_modules`, `.git`, `dist`, `__pycache__`, `.venv`, `target
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## License
-
-[Add your license here]
-
----
-
-**Built with ❤️ for developers who love context-aware AI.**
