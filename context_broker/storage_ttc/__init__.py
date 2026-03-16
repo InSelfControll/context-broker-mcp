@@ -1,5 +1,5 @@
 """
-Compatibility wrapper for storage API.
+Storage TTC package.
 """
 
 from context_broker.storage_ttc.codebase.api import (

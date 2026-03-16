@@ -27,6 +27,7 @@ Context Broker is a Model Context Protocol (MCP) server that provides semantic s
 | **Auto-Project Detection** | Automatically detects project roots | Zero configuration required |
 | **Smart Caching** | Caches search results with file modification tracking | Fast repeat queries |
 | **Token Efficiency** | Reports token usage and savings | Optimize context window usage |
+| **Focused Snippets** | Returns targeted snippets from matched files (not full-file dumps) | Sends only needed context to LLMs |
 | **Multi-Mode Storage** | Global, in-project, or both storage modes | Flexible data persistence |
 | **Respects Ignore Files** | Reads `.gitignore` and `.dockerignore` | Keeps results relevant |
 
@@ -66,6 +67,10 @@ pip install -e .
 | `CONTEXT_BROKER_DEFAULT_QUERY` | Default query for auto-context | `"main entry point configuration setup"` | Any string |
 | `CONTEXT_BROKER_STORAGE_MODE` | Storage mode | `both` | `global`, `in-project`, `both` |
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` | Any valid path |
+| `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading from local cache only (no network) | `1` | `0`, `1`, `true`, `false` |
+
+By default, Context Broker uses half of available CPU cores for indexing/search workloads.
 
 ### MCP Client Configuration
 
@@ -241,6 +246,13 @@ Stores data only within each project's directory:
 
 ## Available Tools
 
+### Available Resources
+
+- `codebase://auto-context` - Always provides project context and token efficiency report on each request.
+- `codebase://token-counter` - Provides latest token metrics for AI code editors and AI terminal editors.
+- Token counter metrics are persisted as internal JSON (`.context-broker/_internal/token-counter-latest.json` in in-project mode).
+- Internal broker storage is excluded from semantic indexing, so it is not sent as external LLM context.
+
 ### `search_codebase`
 
 Search your codebase using semantic similarity.
@@ -294,6 +306,26 @@ Automatically search for main entry points, configuration, and setup files.
 **Example:**
 ```
 auto_search(project_root="/path/to/new-project")
+```
+
+---
+
+### `token_counter`
+
+Return the latest token usage metrics for integration UIs.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root` | string | ❌ No | Project root path - auto-detected if not provided |
+
+**Notes:**
+- If no search has run yet, `token_counter` initializes metrics using a lightweight default search.
+- Intended for AI code editor and terminal editor token panels.
+
+**Example:**
+```
+token_counter(project_root=\"/path/to/project\")
 ```
 
 ---

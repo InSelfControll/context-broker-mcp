@@ -1,5 +1,5 @@
 """
-Compatibility wrapper for project path API.
+Project TTC package.
 """
 
 from context_broker.project_ttc.codebase.api import (

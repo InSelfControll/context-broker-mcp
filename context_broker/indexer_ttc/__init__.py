@@ -1,5 +1,5 @@
 """
-Compatibility wrapper for indexer API.
+Indexer TTC package.
 """
 
 from context_broker.indexer_ttc.codebase.api import (

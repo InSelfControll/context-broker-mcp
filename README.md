@@ -199,6 +199,7 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 |------|-------------|
 | `search_codebase(query, project_root?)` | Search codebase using semantic similarity |
 | `auto_search(project_root?)` | Auto-search for entry points and configuration |
+| `token_counter(project_root?)` | Get latest token usage for editor integrations |
 | `save_search_results(query, filename, subdir?)` | Save search results to JSON |
 | `list_saved_results(project_name, subdir?)` | List saved JSON files |
 | `load_saved_results(project_name, filename, subdir?)` | Load saved search results |
@@ -209,6 +210,11 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 | Resource | Description |
 |----------|-------------|
 | `codebase://auto-context` | Auto-provides context on every request |
+| `codebase://token-counter` | Provides latest token metrics for editor dashboards |
+
+Token counter reports are also persisted as internal JSON under broker storage
+(in-project path: `.context-broker/_internal/token-counter-latest.json`), and
+that storage is excluded from semantic indexing so it is not forwarded as code context.
 
 ### Example Queries
 
@@ -229,6 +235,10 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 | `CONTEXT_BROKER_DEFAULT_QUERY` | Default auto-context query | `"main entry point configuration setup"` |
 | `CONTEXT_BROKER_STORAGE_MODE` | Storage mode: `global`, `in-project`, or `both` | `both` |
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` |
+| `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` (disabled) |
+| `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading to local cache only (no network) | `1` (enabled) |
+
+By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 
 ### Storage Modes
 
@@ -323,7 +333,8 @@ sequenceDiagram
 3. **Respect Ignores**: Reads `.gitignore` and `.dockerignore` to skip excluded files
 4. **Semantic Embedding**: Embeds files using `all-MiniLM-L6-v2` model
 5. **Similarity Search**: Finds most relevant files for your query using cosine similarity
-6. **Caching**: Stores results with file mtimes for fast repeat queries
+6. **Focused Snippets**: Returns targeted snippets from relevant files (not full-file dumps) to reduce request tokens
+7. **Caching**: Stores results with file mtimes for fast repeat queries
 
 ## Project Structure
 
