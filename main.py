@@ -5,18 +5,7 @@ A simple entry point for running the Context Broker MCP server.
 For full functionality, use context-broker.py directly.
 """
 
-from context_broker.server import get_default_server
-
-
-def main():
-    """Run the Context Broker MCP server."""
-    print("🚀 Starting Context Broker MCP Server...")
-    print("For help, see: README.md")
-    print("")
-    
-    mcp = get_default_server()
-    mcp.run()
-
+from context_broker.__main__ import main
 
 if __name__ == "__main__":
     main()

@@ -6,18 +6,29 @@ This module follows the 12-factor app methodology for configuration.
 """
 
 import os
-
 # =============================================================================
 # SYSTEM CONFIGURATION
 # =============================================================================
 
 TOTAL_CORES = os.cpu_count() or 1
 """Number of CPU cores available for parallel processing."""
+WORKER_CORES = max(1, TOTAL_CORES // 2)
+"""Number of CPU cores used for indexing/search (half of available cores)."""
+MODEL_LOCAL_ONLY: bool = os.environ.get(
+    "CONTEXT_BROKER_LOCAL_ONLY",
+    "1"
+).lower() in {"1", "true", "yes", "on"}
+"""If enabled, embedding model loading is strictly local-only (no network fetch)."""
+
+if MODEL_LOCAL_ONLY:
+    # Force local/offline behavior for HuggingFace-backed model loading.
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 # Performance optimizations for PyTorch and NumPy
-os.environ["OMP_NUM_THREADS"] = str(TOTAL_CORES)
-os.environ["MKL_NUM_THREADS"] = str(TOTAL_CORES)
-os.environ["TORCH_NUM_THREADS"] = str(TOTAL_CORES)
+os.environ["OMP_NUM_THREADS"] = str(WORKER_CORES)
+os.environ["MKL_NUM_THREADS"] = str(WORKER_CORES)
+os.environ["TORCH_NUM_THREADS"] = str(WORKER_CORES)
 os.environ["TQDM_DISABLE"] = "1"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
@@ -60,7 +71,7 @@ DEFAULT_IGNORE_DIRS: set[str] = {
     # IDE
     ".idea", ".vscode", ".vs", ".settings",
     # General
-    ".cache", "coverage", "tmp", "temp", "logs",
+    ".cache", ".context-broker", "coverage", "tmp", "temp", "logs",
 }
 """Directories that are always excluded from indexing (regardless of .gitignore)."""
 
@@ -115,6 +126,10 @@ STORAGE_BASE_DIR: str = os.environ.get(
 
 IN_PROJECT_FOLDER: str = ".context-broker"
 """Folder name used for in-project storage."""
+TOKEN_COUNTER_SUBDIR: str = "_internal"
+"""Internal subdirectory for token counter persistence."""
+TOKEN_COUNTER_FILENAME: str = "token-counter-latest.json"
+"""Filename for the latest persisted token counter report."""
 
 DEFAULT_QUERY: str = os.environ.get(
     "CONTEXT_BROKER_DEFAULT_QUERY", 
@@ -124,6 +139,25 @@ DEFAULT_QUERY: str = os.environ.get(
 
 DEFAULT_PROJECT_ROOT: str = os.environ.get("CONTEXT_BROKER_PROJECT_ROOT", "")
 """Default project root from environment variable."""
+ENABLE_PROGRESS_NOTIFICATIONS: bool = os.environ.get(
+    "CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS",
+    "0"
+).lower() in {"1", "true", "yes", "on"}
+"""Enable MCP progress notifications (disabled by default for lower latency)."""
+
+
+# =============================================================================
+# TRANSPORT CONFIGURATION
+# =============================================================================
+
+TRANSPORT: str = os.environ.get("CONTEXT_BROKER_TRANSPORT", "stdio")
+"""Transport protocol: 'stdio', 'sse', 'streamable-http', or 'ws'."""
+
+HOST: str = os.environ.get("CONTEXT_BROKER_HOST", "0.0.0.0")
+"""Host address for network transports (sse, streamable-http, ws)."""
+
+PORT: int = int(os.environ.get("CONTEXT_BROKER_PORT", "8765"))
+"""Port for network transports (sse, streamable-http, ws)."""
 
 
 # =============================================================================
@@ -141,6 +175,14 @@ DEFAULT_TOP_K: int = 5
 
 BATCH_SIZE: int = 32
 """Batch size for embedding generation."""
+INDEX_FILE_MAX_CHARS: int = int(os.environ.get("CONTEXT_BROKER_INDEX_FILE_MAX_CHARS", "12000"))
+"""Maximum characters read per file for indexing/token estimation."""
+RESULT_FILE_MAX_CHARS: int = int(os.environ.get("CONTEXT_BROKER_RESULT_FILE_MAX_CHARS", "40000"))
+"""Maximum characters read per file before snippet extraction."""
+RESULT_SNIPPET_WINDOW_CHARS: int = int(os.environ.get("CONTEXT_BROKER_RESULT_SNIPPET_WINDOW_CHARS", "3000"))
+"""Character window around the most relevant query term per file."""
+RESULT_MAX_TOKENS_PER_FILE: int = int(os.environ.get("CONTEXT_BROKER_RESULT_MAX_TOKENS_PER_FILE", "700"))
+"""Hard token cap per returned file snippet."""
 
 
 # =============================================================================
