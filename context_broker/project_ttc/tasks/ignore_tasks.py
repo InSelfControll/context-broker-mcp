@@ -34,7 +34,9 @@ def should_ignore(path: str, rel_path: str, patterns: list[str], ignore_dirs: se
             matched = fnmatch.fnmatch(rel_path, clean_pattern)
         else:
             basename = os.path.basename(rel_path)
-            matched = fnmatch.fnmatch(rel_path, clean_pattern) or fnmatch.fnmatch(basename, clean_pattern)
+            matched = fnmatch.fnmatch(rel_path, clean_pattern) or fnmatch.fnmatch(
+                basename, clean_pattern
+            )
 
         if matched and is_dir_pattern:
             if not (rel_path.startswith(clean_pattern + os.sep) or rel_path == clean_pattern):

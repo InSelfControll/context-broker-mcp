@@ -11,11 +11,13 @@ Transport selection via CONTEXT_BROKER_TRANSPORT env var:
 import sys
 
 from context_broker.config import HOST, PORT, TRANSPORT
+from context_broker.lifecycle import start_lifecycle_watchdogs
 from context_broker.server import get_default_server
 
 
 def main():
     """Run the Context Broker MCP server."""
+    start_lifecycle_watchdogs()
     mcp = get_default_server()
 
     if TRANSPORT == "ws":

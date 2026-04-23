@@ -67,7 +67,9 @@ def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
         "project_root": root_path,
     }
     state.INDEXES[root_path] = index_data
-    log(f"✅ Index ready. Total size: {total_project_tokens:,} tokens across {len(documents)} files.")
+    log(
+        f"✅ Index ready. Total size: {total_project_tokens:,} tokens across {len(documents)} files."
+    )
     return index_data
 
 

@@ -29,7 +29,9 @@ def save_token_counter_report(project_name: str, project_root: str, report: dict
     )
 
 
-def load_token_counter_report(project_name: str, project_root: str = "") -> Optional[dict[str, Any]]:
+def load_token_counter_report(
+    project_name: str, project_root: str = ""
+) -> Optional[dict[str, Any]]:
     """Load latest persisted token counter report."""
     data = load_json_data(
         project_name=project_name,
