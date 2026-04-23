@@ -22,7 +22,6 @@ class TestSecretPatternMatching:
     def test_dotenv_blocked(self) -> None:
         matched, pattern = _match_secret_pattern(".env")
         assert matched is True
-        # Either ".env" or "*.env" can match; both are valid secret patterns
         assert pattern in {".env", "*.env"}
 
     def test_dotenv_local_blocked(self) -> None:
@@ -66,9 +65,20 @@ class TestSecretPatternMatching:
         assert matched is False
 
     def test_env_in_pathname_allowed(self) -> None:
-        # "environment.py" should NOT match ".env" pattern
         matched, _ = _match_secret_pattern("environment.py")
         assert matched is False
+
+    def test_npmrc_not_blocked_by_filename(self) -> None:
+        """.npmrc should NOT be in SECRET_FILE_PATTERNS (content-based only)."""
+        matched, _ = _match_secret_pattern(".npmrc")
+        assert matched is False
+        assert ".npmrc" not in SECRET_FILE_PATTERNS
+
+    def test_yarnrc_not_blocked_by_filename(self) -> None:
+        """.yarnrc should NOT be in SECRET_FILE_PATTERNS (content-based only)."""
+        matched, _ = _match_secret_pattern(".yarnrc")
+        assert matched is False
+        assert ".yarnrc" not in SECRET_FILE_PATTERNS
 
 
 class TestContentSecretScanning:
@@ -78,7 +88,6 @@ class TestContentSecretScanning:
         content = "API_KEY=sk-abc123def456\nDATABASE_URL=postgres://localhost"
         matched, sig = _scan_content_for_secrets(content)
         assert matched is True
-        # Longer signature "API_KEY" should match before "KEY="
         assert "API_KEY" in sig
 
     def test_password_content_blocked(self) -> None:
@@ -91,7 +100,6 @@ class TestContentSecretScanning:
         content = "SECRET_KEY=django-insecure-abc123\n"
         matched, sig = _scan_content_for_secrets(content)
         assert matched is True
-        # Longer signature "SECRET_KEY" should match before "SECRET"
         assert "SECRET_KEY" in sig
 
     def test_normal_code_allowed(self) -> None:
@@ -103,19 +111,29 @@ class TestContentSecretScanning:
         content = "TOKEN=Bearer abc123\n"
         matched, sig = _scan_content_for_secrets(content)
         assert matched is True
-        assert "TOKEN=" in sig
+        assert "Bearer " in sig
 
     def test_comment_with_secret_word_allowed(self) -> None:
-        # Comments are skipped during secret scanning
         content = "# This is a secret algorithm\n"
         matched, _ = _scan_content_for_secrets(content)
-        # Comments starting with # are skipped in scanning logic
         assert matched is False
 
     def test_aws_access_key_blocked(self) -> None:
         content = "ACCESS_KEY=AKIAIOSFODNN7EXAMPLE\n"
         matched, _ = _scan_content_for_secrets(content)
         assert matched is True
+
+    def test_npmrc_with_auth_token_blocked(self) -> None:
+        """.npmrc containing authToken should be blocked by content scanning."""
+        content = "//registry.npmjs.org/:_authToken=npm_xxxxx\n"
+        matched, _ = _scan_content_for_secrets(content)
+        assert matched is True
+
+    def test_npmrc_without_auth_allowed(self) -> None:
+        """.npmrc with only registry config should pass content scanning."""
+        content = "registry=https://registry.npmjs.org/\nsave-exact=true\n"
+        matched, _ = _scan_content_for_secrets(content)
+        assert matched is False
 
 
 class TestIsSecretFile:
@@ -138,9 +156,12 @@ class TestIsSecretFile:
         assert reason == ""
 
     def test_no_content_no_match(self) -> None:
-        # Without content, only filename patterns are checked
         is_secret, _ = is_secret_file("/project/my_secrets.py", "my_secrets.py")
-        # my_secrets.py does NOT match "secrets.*" (that matches "secrets.json")
+        assert is_secret is False
+
+    def test_npmrc_no_auth_not_secret(self) -> None:
+        """.npmrc without auth should not be flagged as secret."""
+        is_secret, _ = is_secret_file("/project/.npmrc", ".npmrc")
         assert is_secret is False
 
 
@@ -160,9 +181,13 @@ class TestShouldIgnoreSecurity:
         assert result is False
 
     def test_should_ignore_respects_gitignore(self) -> None:
-        # Normal gitignore behavior should still work
         result = should_ignore("/project/__pycache__/foo.pyc", "__pycache__/foo.pyc", ["__pycache__/*"], set())
         assert result is True
+
+    def test_should_ignore_allows_npmrc(self) -> None:
+        """.npmrc without auth should pass through should_ignore."""
+        result = should_ignore("/project/.npmrc", ".npmrc", [], set())
+        assert result is False
 
 
 class TestReadFileContentSecurity:
@@ -196,8 +221,22 @@ class TestReadFileContentSecurity:
     def test_blocks_secrets_json(self, tmp_path: Path) -> None:
         secrets_file = tmp_path / "secrets.json"
         secrets_file.write_text('{"api_key": "secret"}')
-        # This should be blocked by filename pattern
         result = read_file_content(str(secrets_file))
+        assert result is None
+
+    def test_allows_npmrc_without_auth(self, tmp_path: Path) -> None:
+        """.npmrc with only registry config should be readable."""
+        npmrc = tmp_path / ".npmrc"
+        npmrc.write_text("registry=https://registry.npmjs.org/\nsave-exact=true\n")
+        result = read_file_content(str(npmrc))
+        assert result is not None
+        assert "registry" in result
+
+    def test_blocks_npmrc_with_auth(self, tmp_path: Path) -> None:
+        """.npmrc with authToken should be blocked by content scanning."""
+        npmrc = tmp_path / ".npmrc"
+        npmrc.write_text("//registry.npmjs.org/:_authToken=npm_xxxxx\n")
+        result = read_file_content(str(npmrc))
         assert result is None
 
 
@@ -220,6 +259,5 @@ class TestAuditLogging:
     """Tests for security audit logging."""
 
     def test_audit_log_does_not_raise(self) -> None:
-        # Just verify it doesn't crash
         audit_log_secret_block(".env", "blocked by pattern '.env'", operation="index")
         audit_log_secret_block("config.txt", "blocked by signature 'API_KEY'", operation="read")
