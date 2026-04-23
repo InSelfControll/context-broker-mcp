@@ -69,7 +69,9 @@ def extract_relevant_window(content: str, query_terms: list[str]) -> tuple[str, 
     return snippet, True
 
 
-def truncate_to_token_limit(text: str, encoder: tiktoken.Encoding, token_limit: int) -> tuple[str, int, bool]:
+def truncate_to_token_limit(
+    text: str, encoder: tiktoken.Encoding, token_limit: int
+) -> tuple[str, int, bool]:
     """Truncate text to strict token limit."""
     if token_limit <= 0:
         return "", 0, True
@@ -80,7 +82,9 @@ def truncate_to_token_limit(text: str, encoder: tiktoken.Encoding, token_limit: 
     return truncated_text, token_limit, True
 
 
-def prepare_result_content(raw_content: str, query_terms: list[str], encoder: tiktoken.Encoding) -> tuple[str, int, bool]:
+def prepare_result_content(
+    raw_content: str, query_terms: list[str], encoder: tiktoken.Encoding
+) -> tuple[str, int, bool]:
     """Prepare token-efficient snippet for response payload."""
     snippet, char_truncated = extract_relevant_window(raw_content, query_terms)
     snippet_text, snippet_tokens, token_truncated = truncate_to_token_limit(

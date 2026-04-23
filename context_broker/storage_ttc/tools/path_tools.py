@@ -9,7 +9,9 @@ from context_broker.config import IN_PROJECT_FOLDER, STORAGE_BASE_DIR, STORAGE_M
 from context_broker.utils import log
 
 
-def get_storage_dirs(project_name: str, subdir: str = "", project_root: str = "") -> tuple[Optional[Path], Path]:
+def get_storage_dirs(
+    project_name: str, subdir: str = "", project_root: str = ""
+) -> tuple[Optional[Path], Path]:
     """Get local and global storage directories for a project."""
     global_path = Path(STORAGE_BASE_DIR) / project_name
     if subdir:
@@ -49,7 +51,9 @@ def get_storage_dir(
         marker_file = base / ".context-broker-marker"
         if not marker_file.exists():
             try:
-                marker_file.write_text(f"# Context Broker Storage\n# Project: {project_name}\n# Mode: {mode}\n")
+                marker_file.write_text(
+                    f"# Context Broker Storage\n# Project: {project_name}\n# Mode: {mode}\n"
+                )
             except Exception:
                 pass
     return base

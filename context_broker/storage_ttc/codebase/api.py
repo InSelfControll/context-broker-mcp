@@ -8,7 +8,10 @@ from context_broker.storage_ttc.tasks.json_tasks import (
     load_json_data,
     save_json_data,
 )
-from context_broker.storage_ttc.tasks.token_report_tasks import load_token_counter_report, save_token_counter_report
+from context_broker.storage_ttc.tasks.token_report_tasks import (
+    load_token_counter_report,
+    save_token_counter_report,
+)
 from context_broker.storage_ttc.tools.path_tools import get_storage_dir, get_storage_dirs
 
 __all__ = [

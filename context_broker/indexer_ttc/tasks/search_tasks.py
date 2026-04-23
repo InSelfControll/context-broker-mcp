@@ -10,7 +10,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from context_broker.config import RESULT_FILE_MAX_CHARS
 from context_broker.indexer_ttc.tasks.index_tasks import get_index_for_project
-from context_broker.indexer_ttc.tasks.snippet_tasks import extract_query_terms, prepare_result_content
+from context_broker.indexer_ttc.tasks.snippet_tasks import (
+    extract_query_terms,
+    prepare_result_content,
+)
 from context_broker.indexer_ttc.tools import state
 from context_broker.indexer_ttc.tools.cache_tools import (
     generate_cache_key,
@@ -63,7 +66,9 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
         raw_content = read_file_content(path, max_chars=RESULT_FILE_MAX_CHARS)
         if not raw_content:
             continue
-        snippet_text, snippet_tokens, was_truncated = prepare_result_content(raw_content, query_terms, encoder)
+        snippet_text, snippet_tokens, was_truncated = prepare_result_content(
+            raw_content, query_terms, encoder
+        )
         if not snippet_text or snippet_tokens <= 0:
             continue
         result_paths.append(path)
@@ -80,7 +85,12 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
             }
         )
 
-    cache[cache_key] = {"query": query, "top_k": top_k, "result_paths": result_paths, "file_mtimes": get_file_mtimes(result_paths)}
+    cache[cache_key] = {
+        "query": query,
+        "top_k": top_k,
+        "result_paths": result_paths,
+        "file_mtimes": get_file_mtimes(result_paths),
+    }
     state.QUERY_CACHE[project_root] = cache
     save_query_cache(project_root)
 
@@ -135,7 +145,9 @@ def _load_cached_results(cache_entry: dict[str, Any], idx: dict[str, Any]) -> di
         raw_content = read_file_content(path, max_chars=RESULT_FILE_MAX_CHARS)
         if not raw_content:
             continue
-        snippet_text, snippet_tokens, was_truncated = prepare_result_content(raw_content, query_terms, encoder)
+        snippet_text, snippet_tokens, was_truncated = prepare_result_content(
+            raw_content, query_terms, encoder
+        )
         if not snippet_text or snippet_tokens <= 0:
             continue
         context_tokens += snippet_tokens

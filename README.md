@@ -237,8 +237,13 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` |
 | `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` (disabled) |
 | `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading to local cache only (no network) | `1` (enabled) |
+| `CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES` | Exit automatically when the launching editor/AI process disappears | `1` (enabled) |
+| `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
+| `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
+| `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
+It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
 
 ### Storage Modes
 

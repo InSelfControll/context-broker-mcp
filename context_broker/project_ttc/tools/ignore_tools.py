@@ -33,7 +33,8 @@ def match_double_star(path: str, pattern: str) -> bool:
         if pattern.startswith("**/"):
             suffix = pattern[3:]
             return fnmatch.fnmatch(os.path.basename(path), suffix) or any(
-                fnmatch.fnmatch("/".join(path.split("/")[i:]), suffix) for i in range(len(path.split("/")))
+                fnmatch.fnmatch("/".join(path.split("/")[i:]), suffix)
+                for i in range(len(path.split("/")))
             )
         prefix = pattern.rstrip("/**")
         return path.startswith(prefix)

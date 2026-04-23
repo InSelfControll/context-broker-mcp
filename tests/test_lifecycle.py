@@ -1,0 +1,29 @@
+from context_broker import lifecycle
+from context_broker.indexer_ttc.tools import state
+
+
+def test_release_expensive_resources_clears_in_memory_state() -> None:
+    state.INDEXES["demo"] = {"paths": ["a.py"]}
+    state.QUERY_CACHE["demo"] = {"query": "auth"}
+    state.LAST_TOKEN_REPORTS["demo"] = {"total_tokens": 10}
+    state.LAST_PERSISTED_TOKEN_REPORT_HASHES["demo"] = "hash"
+    state.SHARED_MODEL = object()
+    state.ENCODER = object()
+
+    assert lifecycle._release_expensive_resources() is True
+    assert state.INDEXES == {}
+    assert state.QUERY_CACHE == {}
+    assert state.LAST_TOKEN_REPORTS == {}
+    assert state.LAST_PERSISTED_TOKEN_REPORT_HASHES == {}
+    assert state.SHARED_MODEL is None
+    assert state.ENCODER is None
+
+
+def test_startup_ancestors_missing_detects_dead_process() -> None:
+    original = lifecycle._pid_exists
+    lifecycle._pid_exists = lambda pid: pid != 222
+    try:
+        assert lifecycle._startup_ancestors_missing((111, 222, 333)) is True
+        assert lifecycle._startup_ancestors_missing((111, 333)) is False
+    finally:
+        lifecycle._pid_exists = original
