@@ -9,6 +9,7 @@ from context_broker.indexer import get_last_token_report, search_codebase
 from context_broker.lifecycle import tracked_activity
 from context_broker.project import resolve_project_root
 from context_broker.server_ttc.tools.helpers import (
+    format_search_summary_line,
     format_token_report_lines,
     progress,
     report_from_result,
@@ -35,6 +36,11 @@ def register_token_tools(mcp: FastMCP) -> None:
 
             await progress(
                 ctx,
-                f"📈 Tokens: total={report['total_tokens']:,}, sent={report['context_tokens']:,}, saved={report['saved_percent']:.1f}%",
+                format_search_summary_line(
+                    report["total_tokens"],
+                    report["context_tokens"],
+                    report["saved_tokens"],
+                    report["saved_percent"],
+                ),
             )
             return "\n".join(format_token_report_lines(report))

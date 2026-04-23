@@ -97,7 +97,110 @@ SUPPORTED_EXTENSIONS: list[str] = [
     "*.graphql",
     "*.prisma",
 ]
-"""File extensions that will be indexed for semantic search."""
+"""File extensions that will be indexed for semantic search.
+
+NOTE: .env files and other secret-bearing files are EXPLICITLY excluded via
+SECRET_FILE_PATTERNS below. They are never indexed or returned to AI providers,
+even if present in supported directories or matched by glob patterns.
+"""
+
+
+# =============================================================================
+# SECURITY: SECRET FILE PROTECTION
+# =============================================================================
+# These patterns define files that MUST NEVER be indexed or sent to external
+# AI providers because they commonly contain secrets, credentials, tokens,
+# passwords, API keys, private keys, or other sensitive data.
+#
+# This is a defense-in-depth measure. Even if .gitignore fails to exclude
+# these files, or if they are explicitly tracked, they will be hard-blocked
+# by the indexing and search pipeline.
+#
+# The patterns are matched against:
+#   - File basename (e.g., ".env")
+#   - Full relative path (e.g., "config/secrets.yml")
+#   - Content signatures (see SECRET_ENV_KEY_PATTERNS)
+#
+# When a file is blocked, a security audit log is emitted and the file is
+# silently skipped. No content is read, embedded, or returned.
+# =============================================================================
+
+SECRET_FILE_PATTERNS: set[str] = {
+    # Environment files (all variants)
+    ".env",
+    ".env.*",
+    "*.env",
+    "*.env.*",
+    # AWS credentials
+    ".aws/credentials",
+    ".aws/config",
+    # SSH / TLS private keys
+    "id_rsa",
+    "id_dsa",
+    "id_ecdsa",
+    "id_ed25519",
+    "*.pem",
+    "*.key",
+    "*.p12",
+    "*.pfx",
+    # Kubernetes secrets
+    "*.kubeconfig",
+    "kubeconfig",
+    # Docker registry auth
+    ".docker/config.json",
+    # NPM / Yarn auth
+    ".npmrc",
+    ".yarnrc",
+    # Pip auth
+    ".pypirc",
+    # Git credentials
+    ".git-credentials",
+    # Terraform state (may contain secrets)
+    "*.tfstate",
+    "*.tfstate.*",
+    # Database dumps
+    "*.dump",
+    "*.sql.dump",
+    # Known secret filenames
+    "secrets.*",
+    "secret.*",
+    "*.secrets",
+    "*.secret",
+    "credentials.*",
+    "*.credentials",
+    "*.token",
+    "*.tokens",
+    "api_key*",
+    "apikey*",
+    "private_key*",
+    "privatekey*",
+}
+"""Files/directories that must NEVER be indexed or returned to AI providers.
+
+These patterns are hard-coded and cannot be overridden by .gitignore or
+user configuration. They provide a safety net against accidental secret leakage.
+"""
+
+SECRET_ENV_KEY_PATTERNS: set[str] = {
+    "PRIVATE_KEY",
+    "SECRET_KEY",
+    "API_KEY",
+    "ACCESS_KEY",
+    "AUTH_TOKEN",
+    "PASSWORD",
+    "SECRET",
+    "CREDENTIAL",
+    "TOKEN=",
+    "KEY=",
+    "SECRET=",
+    "PASSWORD=",
+}
+"""Content signatures that trigger secret-file detection when found in files.
+
+If a file contains lines matching these patterns, it is treated as a secret
+file and blocked from indexing regardless of filename. This catches renamed
+.env files and other secret-bearing files.
+"""
 
 
 # =============================================================================
@@ -215,9 +318,9 @@ DEFAULT_QUERY: str = os.environ.get(
 DEFAULT_PROJECT_ROOT: str = os.environ.get("CONTEXT_BROKER_PROJECT_ROOT", "")
 """Default project root from environment variable."""
 ENABLE_PROGRESS_NOTIFICATIONS: bool = os.environ.get(
-    "CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS", "0"
+    "CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS", "1"
 ).lower() in {"1", "true", "yes", "on"}
-"""Enable MCP progress notifications (disabled by default for lower latency)."""
+"""Enable MCP progress notifications (token summaries visible in MCP clients). Set 0 to reduce chatter/latency."""
 
 
 # =============================================================================

@@ -117,3 +117,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 5. **Quality Gates**: The validation engine ensures AGENTS.md files contain meaningful project goals and conventions — not just boilerplate.
 
 6. **Extensible Architecture**: The TTC pattern makes it trivial to add new tool categories. The agents module followed the same blueprint as search, storage, and token modules.
+
+---
+
+## [Unreleased] — Security Hardening
+
+### Added
+
+#### Secret File Protection (Defense-in-Depth)
+- **Hard-coded secret file patterns** (`SECRET_FILE_PATTERNS`) that CANNOT be overridden by `.gitignore` or user configuration:
+  - Environment files: `.env`, `.env.*`, `*.env`, `*.env.*`
+  - AWS credentials: `.aws/credentials`, `.aws/config`
+  - SSH / TLS keys: `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519`, `*.pem`, `*.key`, `*.p12`, `*.pfx`
+  - Kubernetes: `*.kubeconfig`, `kubeconfig`
+  - Docker registry: `.docker/config.json`
+  - NPM / Yarn auth: `.npmrc`, `.yarnrc`
+  - Pip auth: `.pypirc`
+  - Git credentials: `.git-credentials`
+  - Terraform state: `*.tfstate`, `*.tfstate.*`
+  - Database dumps: `*.dump`, `*.sql.dump`
+  - Known secret filenames: `secrets.*`, `secret.*`, `*.secrets`, `*.secret`, `credentials.*`, `*.credentials`, `*.token`, `*.tokens`, `api_key*`, `apikey*`, `private_key*`, `privatekey*`
+- **Content-based secret detection** (`SECRET_ENV_KEY_PATTERNS`) that scans file contents for secret signatures:
+  - `PRIVATE_KEY`, `SECRET_KEY`, `API_KEY`, `ACCESS_KEY`, `AUTH_TOKEN`, `PASSWORD`, `SECRET`, `CREDENTIAL`
+  - `TOKEN=`, `KEY=`, `SECRET=`, `PASSWORD=`
+  - Catches renamed `.env` files and other secret-bearing files that don't match filename patterns
+  - Prefers longer/more specific patterns (e.g., `API_KEY` before `KEY=`)
+  - Skips comment lines (`# ...`) to avoid false positives
+  - Only scans first 100 lines for performance
+- **Three-layer defense architecture**:
+  1. **Indexing layer**: `should_ignore()` hard-blocks secret files before they enter the index
+  2. **I/O layer**: `read_file_content()` performs content scanning and returns `None` for secret files
+  3. **Search layer**: Search results only come from the already-filtered index
+- **Security audit logging**: Every blocked file emits a `🔒 SECURITY` log with operation type (`index`, `read`, `search`) and reason for blocking
+- **Security configuration summary**: `get_security_summary()` reports pattern counts for transparency
+- **New `security_ttc/` module** following TTC architecture:
+  - `security_ttc/tools.py` — Pattern matching, content scanning, audit logging
+- **35 security tests** covering:
+  - Filename pattern matching (13 tests)
+  - Content signature detection (7 tests)
+  - Combined `is_secret_file()` logic (4 tests)
+  - `should_ignore()` integration (4 tests)
+  - `read_file_content()` blocking (5 tests)
+  - Configuration and audit logging (2 tests)
+
+### Why This Matters
+
+Before this change, Context Broker relied solely on `.gitignore` patterns to exclude sensitive files. This was insufficient because:
+- Developers sometimes commit `.env` files accidentally
+- `.env` files may be renamed (e.g., `config.txt`, `settings.local`)
+- Secret files may be outside `.gitignore` scope (e.g., SSH keys in `~/.ssh`)
+- AI providers receive ALL indexed file content through MCP tool responses
+
+With these measures, **secret files are physically blocked from being read, embedded, or transmitted** — even if a developer makes a mistake.

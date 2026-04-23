@@ -28,6 +28,16 @@ from context_broker.project import get_project_name
 from context_broker.utils import log, log_ascii_table
 
 
+def _token_savings_vs_corpus(total_tokens: int, context_tokens: int) -> tuple[int, float]:
+    """Corpus baseline minus reply tokens; clamp so savings are never negative."""
+    if total_tokens <= 0:
+        return 0, 0.0
+    saved = total_tokens - context_tokens
+    if saved < 0:
+        saved = 0
+    return saved, (saved / total_tokens) * 100.0
+
+
 def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, Any]:
     """Search the codebase using semantic similarity."""
     if not project_root:
@@ -95,8 +105,7 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
     save_query_cache(project_root)
 
     total_tokens = idx["total_tokens"]
-    saved_tokens = total_tokens - context_tokens
-    saved_percent = (saved_tokens / total_tokens) * 100 if total_tokens > 0 else 0
+    saved_tokens, saved_percent = _token_savings_vs_corpus(total_tokens, context_tokens)
     project_name = get_project_name(project_root)
     report = {
         "query": query,
@@ -164,8 +173,7 @@ def _load_cached_results(cache_entry: dict[str, Any], idx: dict[str, Any]) -> di
         )
 
     total_tokens = idx["total_tokens"]
-    saved_tokens = total_tokens - context_tokens
-    saved_percent = (saved_tokens / total_tokens) * 100 if total_tokens > 0 else 0
+    saved_tokens, saved_percent = _token_savings_vs_corpus(total_tokens, context_tokens)
     project_name = get_project_name(idx["project_root"])
     report = {
         "query": query,
