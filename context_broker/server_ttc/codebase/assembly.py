@@ -4,6 +4,7 @@ from fastmcp import FastMCP
 
 from context_broker.server_ttc.codebase.resources import register_resources_and_prompts
 from context_broker.server_ttc.tasks.agents_tasks import register_agents_tools
+from context_broker.server_ttc.tasks.changelog_tasks import register_changelog_tools
 from context_broker.server_ttc.tasks.search_tasks import register_search_tools
 from context_broker.server_ttc.tasks.storage_tasks import register_storage_tools
 from context_broker.server_ttc.tasks.token_tasks import register_token_tools
@@ -18,6 +19,7 @@ def create_mcp_server() -> FastMCP:
     register_storage_tools(mcp)
     register_token_tools(mcp)
     register_agents_tools(mcp)
+    register_changelog_tools(mcp)
     register_resources_and_prompts(mcp)
     return mcp
 
