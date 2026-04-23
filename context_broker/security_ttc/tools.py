@@ -5,6 +5,13 @@ This module provides defense-in-depth protection against accidentally indexing,
 embedding, or returning files that contain secrets, credentials, tokens,
 passwords, API keys, or other sensitive data.
 
+Design principle: filename patterns are used ONLY for files that ALMOST ALWAYS
+contain secrets (e.g., .env, id_rsa). Files that SOMETIMES contain secrets but
+are often just config (e.g., .npmrc, .yarnrc) are handled via content-based
+SECRET_ENV_KEY_PATTERNS scanning instead. This reduces false positives while
+maintaining security — if a .npmrc DOES contain an auth token, it is still
+blocked by content scanning.
+
 All blocking is LOGGED so users can audit what was blocked and why.
 """
 

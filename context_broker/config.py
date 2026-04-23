@@ -148,9 +148,6 @@ SECRET_FILE_PATTERNS: set[str] = {
     "kubeconfig",
     # Docker registry auth
     ".docker/config.json",
-    # NPM / Yarn auth
-    ".npmrc",
-    ".yarnrc",
     # Pip auth
     ".pypirc",
     # Git credentials
@@ -194,6 +191,11 @@ SECRET_ENV_KEY_PATTERNS: set[str] = {
     "KEY=",
     "SECRET=",
     "PASSWORD=",
+    # NPM / Yarn auth tokens in .npmrc / .yarnrc
+    "_authToken",
+    "_auth",
+    # Bearer tokens
+    "Bearer ",
 }
 """Content signatures that trigger secret-file detection when found in files.
 
@@ -399,3 +401,4 @@ CACHE_DIR: str = ".cache"
 
 CACHE_FILE: str = "context-broker.json"
 """Cache file name."""
+
