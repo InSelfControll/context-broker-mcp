@@ -8,7 +8,12 @@ from context_broker.config import DEFAULT_QUERY
 from context_broker.indexer import get_last_token_report, search_codebase
 from context_broker.lifecycle import tracked_activity
 from context_broker.project import resolve_project_root
-from context_broker.server_ttc.tools.helpers import format_token_report_lines, report_from_result
+from context_broker.server_ttc.tools.helpers import (
+    format_search_summary_line,
+    format_token_efficiency_lines,
+    format_token_report_lines,
+    report_from_result,
+)
 from context_broker.utils import log
 
 
@@ -24,13 +29,23 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
             try:
                 result = search_codebase(DEFAULT_QUERY, root, top_k=3)
                 lines = [
+                    format_search_summary_line(
+                        result["total_tokens"],
+                        result["context_tokens"],
+                        result["saved_tokens"],
+                        result["saved_percent"],
+                    ),
+                    "",
                     f"🔄 Auto-Context: {result['project']}",
                     f"📂 Project Root: {result['project_root']}",
                     "",
-                    "📈 Token Efficiency Report:",
-                    f"   • Total Project Tokens: {result['total_tokens']:,}",
-                    f"   • Context Sent: {result['context_tokens']:,}",
-                    f"   • Tokens Saved: {result['saved_tokens']:,} ({result['saved_percent']:.1f}%)",
+                    *format_token_efficiency_lines(
+                        result["total_tokens"],
+                        result["context_tokens"],
+                        result["saved_tokens"],
+                        result["saved_percent"],
+                        truncated_files=int(result.get("truncated_files", 0)),
+                    ),
                     "",
                 ]
                 for item in result["results"]:

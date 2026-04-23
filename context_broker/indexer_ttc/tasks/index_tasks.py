@@ -10,6 +10,7 @@ from context_broker.config import (
     BATCH_SIZE,
     DEFAULT_IGNORE_DIRS,
     INDEX_FILE_MAX_CHARS,
+    RESULT_FILE_MAX_CHARS,
     SUPPORTED_EXTENSIONS,
 )
 from context_broker.indexer_ttc.tools import state
@@ -29,6 +30,8 @@ def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
     model = get_model()
     encoder = get_encoder()
     ignore_patterns = load_ignore_patterns(root_path)
+    # Same per-file byte budget as search snippets so corpus token totals match the "full slice" baseline.
+    read_cap = max(INDEX_FILE_MAX_CHARS, RESULT_FILE_MAX_CHARS)
 
     documents: list[str] = []
     paths: list[str] = []
@@ -42,7 +45,7 @@ def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
             if should_ignore(file_path, rel_path, ignore_patterns, DEFAULT_IGNORE_DIRS):
                 ignored_count += 1
                 continue
-            content = read_file_content(file_path, max_chars=INDEX_FILE_MAX_CHARS)
+            content = read_file_content(file_path, max_chars=read_cap)
             if content is None:
                 continue
             total_project_tokens += count_tokens(content, encoder)

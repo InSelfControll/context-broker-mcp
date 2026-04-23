@@ -11,7 +11,19 @@ from context_broker.project_ttc.tools.ignore_tools import match_double_star, par
 
 
 def should_ignore(path: str, rel_path: str, patterns: list[str], ignore_dirs: set[str]) -> bool:
-    """Determine whether a path should be ignored."""
+    """Determine whether a path should be ignored.
+
+    Also checks SECRET_FILE_PATTERNS to prevent secret files from being
+    indexed or returned to AI providers. This is a hard security block
+    that cannot be overridden by .gitignore or user configuration.
+    """
+    # SECURITY: Hard-block secret files first (cannot be overridden)
+    from context_broker.security_ttc.tools import audit_log_secret_block, is_secret_file
+    is_secret, reason = is_secret_file(path, rel_path)
+    if is_secret:
+        audit_log_secret_block(rel_path, reason, operation="index")
+        return True
+
     for part in Path(path).parts:
         if part in ignore_dirs:
             return True

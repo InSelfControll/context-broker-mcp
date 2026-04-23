@@ -10,7 +10,11 @@ from context_broker.config import STORAGE_MODE, StorageMode
 from context_broker.indexer import search_codebase
 from context_broker.lifecycle import tracked_activity
 from context_broker.project import get_project_name, resolve_project_root
-from context_broker.server_ttc.tools.helpers import notify_error, progress
+from context_broker.server_ttc.tools.helpers import (
+    format_token_efficiency_lines,
+    notify_error,
+    progress,
+)
 from context_broker.storage import (
     get_storage_config_info,
     list_saved_json,
@@ -66,6 +70,7 @@ def register_storage_tools(mcp: FastMCP) -> None:
                         "context_tokens": result["context_tokens"],
                         "saved_tokens": result["saved_tokens"],
                         "saved_percent": result["saved_percent"],
+                        "truncated_files": result.get("truncated_files", 0),
                     },
                 }
                 filepath = save_json_data(project_name, filename, data, subdir, root)
@@ -158,15 +163,17 @@ def register_storage_tools(mcp: FastMCP) -> None:
                     "",
                 ]
                 if stats:
+                    lines.append("📈 Token snapshot (when results were saved):")
                     lines.extend(
-                        [
-                            "📈 Token Efficiency Report (at time of saving):",
-                            f"   • Total Project Tokens: {stats.get('total_tokens', 0):,}",
-                            f"   • Context Sent: {stats.get('context_tokens', 0):,}",
-                            f"   • Tokens Saved: {stats.get('saved_tokens', 0):,} ({stats.get('saved_percent', 0):.1f}%)",
-                            "",
-                        ]
+                        format_token_efficiency_lines(
+                            int(stats.get("total_tokens", 0)),
+                            int(stats.get("context_tokens", 0)),
+                            int(stats.get("saved_tokens", 0)),
+                            float(stats.get("saved_percent", 0.0)),
+                            truncated_files=int(stats.get("truncated_files", 0)),
+                        )
                     )
+                    lines.append("")
                 lines.extend(["=" * 50, ""])
                 for file_info in data.get("files", []):
                     lines.append(f"### FILE: {file_info['path']}")

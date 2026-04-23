@@ -7,7 +7,12 @@ from fastmcp import Context, FastMCP
 from context_broker.indexer import search_codebase
 from context_broker.lifecycle import tracked_activity
 from context_broker.project import resolve_project_root
-from context_broker.server_ttc.tools.helpers import notify_error, progress
+from context_broker.server_ttc.tools.helpers import (
+    format_search_summary_line,
+    format_token_efficiency_lines,
+    notify_error,
+    progress,
+)
 from context_broker.utils import log
 
 
@@ -28,22 +33,34 @@ def register_search_tools(mcp: FastMCP) -> None:
             try:
                 await progress(ctx, f"📁 Project root resolved to: {root}")
                 result = search_codebase(query, root, top_k=5)
-                await progress(
-                    ctx,
-                    f"✅ Found {result['returned_files']} files, saved {result['saved_percent']:.1f}% tokens",
+                tok_line = format_search_summary_line(
+                    result["total_tokens"],
+                    result["context_tokens"],
+                    result["saved_tokens"],
+                    result["saved_percent"],
                 )
+                await progress(ctx, f"✅ {tok_line} · files: {result['returned_files']}")
 
                 lines = [
+                    format_search_summary_line(
+                        result["total_tokens"],
+                        result["context_tokens"],
+                        result["saved_tokens"],
+                        result["saved_percent"],
+                    ),
+                    "",
                     f"🔍 Search Results for: '{result['query']}'",
                     f"📁 Project: {result['project']}",
                     f"📂 Project Root: {result['project_root']}",
                     f"📊 Found {result['returned_files']} relevant files (out of {result['total_files']} total)",
                     "",
-                    "📈 Token Efficiency Report:",
-                    f"   • Total Project Tokens: {result['total_tokens']:,}",
-                    f"   • Context Sent: {result['context_tokens']:,}",
-                    f"   • Tokens Saved: {result['saved_tokens']:,} ({result['saved_percent']:.1f}%)",
-                    f"   • Snippets Truncated: {result.get('truncated_files', 0)}",
+                    *format_token_efficiency_lines(
+                        result["total_tokens"],
+                        result["context_tokens"],
+                        result["saved_tokens"],
+                        result["saved_percent"],
+                        truncated_files=int(result.get("truncated_files", 0)),
+                    ),
                     "",
                     "=" * 60,
                     "",
@@ -75,20 +92,33 @@ def register_search_tools(mcp: FastMCP) -> None:
                     root,
                     top_k=5,
                 )
-                await progress(
-                    ctx, f"✅ Found {result['returned_files']} files for project overview"
+                tok_line = format_search_summary_line(
+                    result["total_tokens"],
+                    result["context_tokens"],
+                    result["saved_tokens"],
+                    result["saved_percent"],
                 )
+                await progress(ctx, f"✅ {tok_line} · files: {result['returned_files']}")
 
                 lines = [
+                    format_search_summary_line(
+                        result["total_tokens"],
+                        result["context_tokens"],
+                        result["saved_tokens"],
+                        result["saved_percent"],
+                    ),
+                    "",
                     f"🚀 Auto-Context for Project: {result['project']}",
                     f"📂 Project Root: {result['project_root']}",
                     f"📊 Found {result['returned_files']} relevant files",
                     "",
-                    "📈 Token Efficiency Report:",
-                    f"   • Total Project Tokens: {result['total_tokens']:,}",
-                    f"   • Context Sent: {result['context_tokens']:,}",
-                    f"   • Tokens Saved: {result['saved_tokens']:,} ({result['saved_percent']:.1f}%)",
-                    f"   • Snippets Truncated: {result.get('truncated_files', 0)}",
+                    *format_token_efficiency_lines(
+                        result["total_tokens"],
+                        result["context_tokens"],
+                        result["saved_tokens"],
+                        result["saved_percent"],
+                        truncated_files=int(result.get("truncated_files", 0)),
+                    ),
                     "",
                     "=" * 60,
                     "",
