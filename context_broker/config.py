@@ -311,6 +311,8 @@ TOKEN_COUNTER_SUBDIR: str = "_internal"
 """Internal subdirectory for token counter persistence."""
 TOKEN_COUNTER_FILENAME: str = "token-counter-latest.json"
 """Filename for the latest persisted token counter report."""
+TOKEN_COUNTER_RUNS_SUBDIR: str = "_internal/token-runs"
+"""Internal subdirectory for append-only token counter run reports."""
 
 DEFAULT_QUERY: str = os.environ.get(
     "CONTEXT_BROKER_DEFAULT_QUERY", "main entry point configuration setup"
