@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] — 2026-04-30
+
+### Added
+
+- ✨ configurable embedding model, device, and optional LLM env vars — `63d7d8f`
+- ✨ automated feature documentation generation — `a5f9c4b`
+- ✨ automated CHANGELOG.md generation from git commits — `4bef4ef`
+- ✨ AGENTS.md auto-generation, lifecycle watchdogs, and resource management — `97a4054`
+- ✨ add async tool support with progress notifications and logging — `8c75a18`
+- ✨ initial release of Context Broker MCP server — `64a5a23`
+
+### Fixed
+
+- 🐛 include token efficiency report in MCP tool responses — `53f310e`
+
+### Security
+
+- 🔒 refine .npmrc/.yarnrc handling — content-based only — `ab98f44`
+- 🔒 add defense-in-depth secret file protection — `350c432`
+
+### Changed
+
+- ♻️ migrate to TTC modular architecture — `5410ea2`
+
+### Documentation
+
+- 📝 add comprehensive run commands and MCP client configuration — `d9bc0bb`
+
+### Chore
+
+- 🔧 bump fastmcp from 3.1.1 to 3.2.0 — `38e678f`
+- 🔧 bump pygments from 2.19.2 to 2.20.0 — `b3558cc`
+- 🔧 bump cryptography from 46.0.5 to 46.0.6 — `4859095`
+- 🔧 bump requests from 2.32.5 to 2.33.0 — `745f25c`
+- 🔧 bump minimum dependency versions in pyproject.toml — `527ea5e`
+- 🔧 upgrade dependencies to latest versions — `81f0559`
+- 🔧 update fastmcp dependency to v3 beta — `4b6d32e`
+
+### Uncategorized
+
+- 📝 Merge pull request #8 from InSelfControll/dependabot/uv/pygments-2.20.0 ([#8](https://github.com/yourusername/context-broker-mcp/pull/8)) — `3f388df`
+- 📝 Merge pull request #6 from InSelfControll/dependabot/uv/requests-2.33.0 ([#6](https://github.com/yourusername/context-broker-mcp/pull/6)) — `20cdeb2`
+- 📝 Merge pull request #7 from InSelfControll/dependabot/uv/cryptography-46.0.6 ([#7](https://github.com/yourusername/context-broker-mcp/pull/7)) — `effc6ba`
+- 📝 Merge pull request #9 from InSelfControll/dependabot/uv/fastmcp-3.2.0 ([#9](https://github.com/yourusername/context-broker-mcp/pull/9)) — `630191d`
+- 📝 Update README.md — `bba8ad3`
+
 ## [Unreleased]
 
 ### Added
