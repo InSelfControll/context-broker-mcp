@@ -2,6 +2,69 @@
 
 A Model Context Protocol (MCP) server that provides semantic search capabilities for codebases. Uses sentence transformers to understand code meaning and find relevant files based on natural language queries.
 
+## Models
+
+Context Broker uses **one local ML model** — an embedding model, not a chat/LLM:
+
+| Component | Model | Purpose | Configurable? |
+|-----------|-------|---------|--------------|
+| Embedding | `all-MiniLM-L6-v2` (sentence-transformers) | Converts code into vector embeddings for semantic search | Yes — `CONTEXT_BROKER_EMBEDDING_MODEL` |
+| Tokenizer | `cl100k_base` (tiktoken) | Estimates token counts for efficiency reports | No |
+
+**Key points:**
+- The embedding model runs **locally on CPU** by default (set `CONTEXT_BROKER_DEVICE=cuda` or `mps` for GPU)
+- **No LLM or chat model is used** — Context Broker is a search/indexing tool, not a generative AI
+- Local-only mode (`CONTEXT_BROKER_LOCAL_ONLY=1`) forces offline model loading — no network calls
+- The model is lazy-loaded and auto-unloaded after 15 minutes of inactivity
+
+### Using a Different Embedding Model
+
+Any model compatible with the `sentence-transformers` library works. Popular alternatives:
+
+| Model | Quality | Speed | Size |
+|-------|---------|-------|------|
+| `all-MiniLM-L6-v2` (default) | Good | Fast | ~80 MB |
+| `all-mpnet-base-v2` | Better | Slower | ~420 MB |
+| `paraphrase-MiniLM-L3-v2` | Lower | Fastest | ~60 MB |
+
+Set via environment variable:
+```bash
+CONTEXT_BROKER_EMBEDDING_MODEL=all-mpnet-base-v2
+```
+
+> When `CONTEXT_BROKER_LOCAL_ONLY=1` (default), the model must be pre-downloaded. Download with:
+> ```bash
+> python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-mpnet-base-v2')"
+> ```
+
+### Optional LLM Configuration
+
+Context Broker exposes optional LLM environment variables that **have no built-in effect yet**. They are available so MCP clients and future tools can discover what LLM endpoint to use. Set them in your `.env` or MCP client config:
+
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| `CONTEXT_BROKER_LLM_MODEL` | `llama3`, `gpt-4o` | LLM model identifier |
+| `CONTEXT_BROKER_LLM_BASE_URL` | `http://localhost:11434/v1` | API endpoint (Ollama, OpenAI-compatible, etc.) |
+| `CONTEXT_BROKER_LLM_API_KEY` | `sk-...` | API key (leave empty for local models) |
+
+These values are reported by the `get_storage_config` tool so MCP clients can read them at runtime.
+
+Example with Ollama:
+```json
+{
+  "mcpServers": {
+    "context-broker": {
+      "command": "uv",
+      "args": ["run", "python", "/path/to/context-broker.py"],
+      "env": {
+        "CONTEXT_BROKER_LLM_MODEL": "llama3",
+        "CONTEXT_BROKER_LLM_BASE_URL": "http://localhost:11434/v1"
+      }
+    }
+  }
+}
+```
+
 ## Features
 
 - 🔍 **Semantic Code Search** - Find code by describing what you need in plain English
@@ -235,8 +298,13 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 | `CONTEXT_BROKER_DEFAULT_QUERY` | Default auto-context query | `"main entry point configuration setup"` |
 | `CONTEXT_BROKER_STORAGE_MODE` | Storage mode: `global`, `in-project`, or `both` | `both` |
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` |
-| `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` (disabled) |
+| `CONTEXT_BROKER_EMBEDDING_MODEL` | Sentence-transformers model for embeddings | `all-MiniLM-L6-v2` |
+| `CONTEXT_BROKER_DEVICE` | Torch device for the embedding model (`cpu`, `cuda`, `mps`) | `cpu` |
 | `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading to local cache only (no network) | `1` (enabled) |
+| `CONTEXT_BROKER_LLM_MODEL` | Optional LLM model identifier (exposed to MCP clients) | *(empty)* |
+| `CONTEXT_BROKER_LLM_BASE_URL` | Optional LLM API endpoint URL (exposed to MCP clients) | *(empty)* |
+| `CONTEXT_BROKER_LLM_API_KEY` | Optional LLM API key (exposed to MCP clients) | *(empty)* |
+| `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` (disabled) |
 | `CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES` | Exit automatically when the launching editor/AI process disappears | `1` (enabled) |
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
@@ -336,7 +404,7 @@ sequenceDiagram
 1. **Project Detection**: Scans for markers like `.git`, `package.json`, `pyproject.toml` to find project root
 2. **File Indexing**: Indexes supported files (`.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, etc.)
 3. **Respect Ignores**: Reads `.gitignore` and `.dockerignore` to skip excluded files
-4. **Semantic Embedding**: Embeds files using `all-MiniLM-L6-v2` model
+4. **Semantic Embedding**: Embeds files using a configurable sentence-transformers model (default: `all-MiniLM-L6-v2`)
 5. **Similarity Search**: Finds most relevant files for your query using cosine similarity
 6. **Focused Snippets**: Returns targeted snippets from relevant files (not full-file dumps) to reduce request tokens
 7. **Caching**: Stores results with file mtimes for fast repeat queries

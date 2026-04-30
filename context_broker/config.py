@@ -367,11 +367,42 @@ IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS: float = max(
 # MODEL CONFIGURATION
 # =============================================================================
 
-EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
-"""Sentence transformer model used for embeddings."""
+EMBEDDING_MODEL: str = os.environ.get(
+    "CONTEXT_BROKER_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
+)
+"""Sentence transformer model used for embeddings.
+
+Configurable via CONTEXT_BROKER_EMBEDDING_MODEL. Any model compatible with
+the ``sentence-transformers`` library works — e.g. ``all-mpnet-base-v2``
+for higher quality, or ``paraphrase-MiniLM-L3-v2`` for faster searches.
+Must be pre-downloaded when CONTEXT_BROKER_LOCAL_ONLY is enabled.
+"""
 
 ENCODING_MODEL: str = "cl100k_base"
 """Tiktoken encoding model for token counting."""
+
+MODEL_DEVICE: str = os.environ.get("CONTEXT_BROKER_DEVICE", "cpu")
+"""Torch device for the embedding model (e.g. "cpu", "cuda", "mps")."""
+
+# ---------------------------------------------------------------------------
+# Optional LLM configuration
+# ---------------------------------------------------------------------------
+# These settings have **no built-in effect** yet — they are exposed so MCP
+# clients and future tools can discover what LLM endpoint / model to use.
+# Set them in your .env or MCP client env block and read them from the
+# ``get_storage_config`` tool response.
+# ---------------------------------------------------------------------------
+
+LLM_MODEL: str = os.environ.get("CONTEXT_BROKER_LLM_MODEL", "")
+"""Optional LLM model identifier (e.g. "llama3", "gpt-4o", "claude-3-opus").
+Exposed via the storage-config tool so MCP clients can discover it."""
+
+LLM_BASE_URL: str = os.environ.get("CONTEXT_BROKER_LLM_BASE_URL", "")
+"""Optional base URL for an LLM API endpoint (e.g. "http://localhost:11434/v1"
+for Ollama, or an OpenAI-compatible endpoint)."""
+
+LLM_API_KEY: str = os.environ.get("CONTEXT_BROKER_LLM_API_KEY", "")
+"""Optional API key for the LLM endpoint. Leave empty for local models."""
 
 DEFAULT_TOP_K: int = 5
 """Default number of search results to return."""
