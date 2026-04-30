@@ -6,7 +6,7 @@ import tiktoken
 import torch
 from sentence_transformers import SentenceTransformer
 
-from context_broker.config import EMBEDDING_MODEL, ENCODING_MODEL, MODEL_LOCAL_ONLY, WORKER_CORES
+from context_broker.config import EMBEDDING_MODEL, ENCODING_MODEL, MODEL_DEVICE, MODEL_LOCAL_ONLY, WORKER_CORES
 from context_broker.indexer_ttc.tools import state
 from context_broker.utils import log
 
@@ -23,7 +23,7 @@ def get_model() -> SentenceTransformer:
         try:
             state.SHARED_MODEL = SentenceTransformer(
                 EMBEDDING_MODEL,
-                device="cpu",
+                device=MODEL_DEVICE,
                 local_files_only=MODEL_LOCAL_ONLY,
             )
         except Exception as e:

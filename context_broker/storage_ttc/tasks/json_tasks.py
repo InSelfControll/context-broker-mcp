@@ -106,6 +106,14 @@ def list_saved_json(
 
 def get_storage_config_info() -> dict[str, Any]:
     """Get current storage configuration details."""
+    from context_broker.config import (
+        EMBEDDING_MODEL,
+        LLM_API_KEY,
+        LLM_BASE_URL,
+        LLM_MODEL,
+        MODEL_DEVICE,
+    )
+
     return {
         "mode": STORAGE_MODE,
         "base_dir": STORAGE_BASE_DIR,
@@ -115,8 +123,20 @@ def get_storage_config_info() -> dict[str, Any]:
             StorageMode.IN_PROJECT: "Store only in project folder",
             StorageMode.BOTH: "Use both, prefer local project (DEFAULT)",
         },
+        "model": {
+            "embedding_model": EMBEDDING_MODEL,
+            "device": MODEL_DEVICE,
+            "llm_model": LLM_MODEL or "(not set)",
+            "llm_base_url": LLM_BASE_URL or "(not set)",
+            "llm_api_key": "(set)" if LLM_API_KEY else "(not set)",
+        },
         "environment_variables": {
             "CONTEXT_BROKER_STORAGE_MODE": "'global', 'in-project', or 'both'",
             "CONTEXT_BROKER_STORAGE_DIR": "Base directory (default: ~/.context-broker)",
+            "CONTEXT_BROKER_EMBEDDING_MODEL": "Sentence-transformers model (default: all-MiniLM-L6-v2)",
+            "CONTEXT_BROKER_DEVICE": "Torch device: cpu, cuda, mps (default: cpu)",
+            "CONTEXT_BROKER_LLM_MODEL": "Optional LLM model identifier",
+            "CONTEXT_BROKER_LLM_BASE_URL": "Optional LLM API base URL",
+            "CONTEXT_BROKER_LLM_API_KEY": "Optional LLM API key",
         },
     }

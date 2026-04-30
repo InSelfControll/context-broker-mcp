@@ -390,5 +390,7 @@ class S3Storage:
 ### Custom Embedding Models
 ```python
 # In context_broker/config.py
-EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
+EMBEDDING_MODEL = os.environ.get(
+    "CONTEXT_BROKER_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
+)
 ```
