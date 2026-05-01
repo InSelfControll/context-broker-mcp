@@ -9,8 +9,10 @@ from context_broker.storage_ttc.tasks.json_tasks import (
     save_json_data,
 )
 from context_broker.storage_ttc.tasks.token_report_tasks import (
+    list_token_counter_runs,
     load_token_counter_report,
     save_token_counter_report,
+    save_token_counter_run,
 )
 from context_broker.storage_ttc.tools.path_tools import get_storage_dir, get_storage_dirs
 
@@ -22,5 +24,7 @@ __all__ = [
     "list_saved_json",
     "get_storage_config_info",
     "save_token_counter_report",
+    "save_token_counter_run",
     "load_token_counter_report",
+    "list_token_counter_runs",
 ]
