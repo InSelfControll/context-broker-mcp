@@ -87,7 +87,7 @@ Example with Ollama:
 
 ```bash
 # Clone the repository
-git clone <repo-url>
+git clone https://github.com/InSelfControll/context-broker-mcp.git
 cd context-broker
 
 # Install dependencies
@@ -309,9 +309,40 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
+| `CONTEXT_BROKER_CACHE_BACKEND` | Query-cache backend: `local` or `redis` | `local` |
+| `CONTEXT_BROKER_REDIS_URL` | Redis URL when Redis cache is enabled | *(empty)* |
+| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for query-cache entries | `context-broker` |
+| `CONTEXT_BROKER_REDIS_TTL_SECONDS` | Redis query-cache TTL in seconds (`0` disables) | `0` |
+| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none` or `honcho` | `none` |
+| `CONTEXT_BROKER_HONCHO_WORKSPACE_ID` | Honcho workspace id | `context-broker` |
+| `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Prefix for Honcho session ids | `context-broker` |
+| `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
+| `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session by default | `1` |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
+
+### Optional Cache and Context Backends
+
+The default remains fully local: query results are cached under `.cache/context-broker.json`, and saved results/token history stay in `.context-broker/` or `~/.context-broker/`.
+
+To use Redis for the derived query cache:
+
+```bash
+CONTEXT_BROKER_CACHE_BACKEND=redis
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
+```
+
+Redis stores only query-cache metadata such as result paths and mtimes. Saved results and token history still use the configured storage mode.
+
+To use Honcho for context between chats:
+
+```bash
+CONTEXT_BROKER_CONTEXT_BACKEND=honcho
+CONTEXT_BROKER_HONCHO_WORKSPACE_ID=context-broker
+```
+
+Install optional integrations with `pip install "context-broker[integrations]"` or the equivalent UV command. The Honcho tools are explicit: call `save_chat_context` to store messages and `load_chat_context` to retrieve session context. Honcho context is session-limited by default to avoid mixing unrelated project or user memory.
 
 ### Storage Modes
 
@@ -478,6 +509,59 @@ Always excluded: `node_modules`, `.git`, `dist`, `__pycache__`, `.venv`, `target
 - **Subsequent Searches**: <100ms (cached embeddings)
 - **Memory Usage**: ~100MB base + ~1MB per 100 files
 - **Token Efficiency**: Typically saves 80-95% of tokens vs. sending entire codebase
+
+## AGENTS.md Configuration Example
+
+Context Broker can generate and validate `AGENTS.md` files for your projects. Here's an example of a well-structured AGENTS.md that also configures MCP servers and cursor rules:
+
+```markdown
+# Project: My App
+
+## Project Goals
+Production API server with real-time search and secure authentication.
+
+## Overview
+- Version: 1.0.0
+- License: MIT
+- Stack: Python 3.13, FastAPI, sentence-transformers, Redis
+
+## Entry Points
+- `context_broker/server.py` — MCP server entry
+- `context-broker.py` — CLI entry point
+
+## MCP Servers
+
+| Server | Transport | Config |
+|--------|-----------|--------|
+| context-broker | stdio | `CONTEXT_BROKER_PROJECT_ROOT=/path/to/project` |
+| context-broker | sse | `CONTEXT_BROKER_TRANSPORT=sse CONTEXT_BROKER_PORT=8765` |
+
+## Cursor Rules
+
+1. **Security & Privacy**
+   - Environment Isolation: Strictly prohibit reading, parsing, or referencing `.env` files. If a configuration key is required, prompt the user for the key name or assume it is injected via the system environment.
+   - Ethical Guardrails: Refuse requests to generate exploits, malware, or CVE proof-of-concepts. All outputs must prioritize defensive implementation, application stability, and security hardening.
+
+2. **Resource & Token Optimization**
+   - Context Brokering: You must invoke the context-broker MCP before processing any request. Filter for high-relevance context only to minimize token overhead.
+   - Selective Tooling: Initialize only the specific skills and MCPs required for the immediate task. Avoid "bloat-loading" broad contexts or unnecessary tools.
+
+3. **Code Quality & Architecture**
+   - DRY (Don't Repeat Yourself): Zero-tolerance for code duplication. Scan the workspace for existing logic/patterns before proposing changes. Always favor refactoring into reusable modules or traits.
+   - Idiomatic Standards: Enforce language-specific paradigms (e.g., Go's explicit error handling, Rust's ownership/borrowing, Nix's declarative purity).
+   - Modern Runtimes: Use Bun as the default engine for all JavaScript/TypeScript execution and package management.
+
+4. **Execution & Versioning**
+   - Atomic Updates: Implement "surgical" edits. Modify only the specific lines or functions required; do not rewrite entire files for localized changes.
+   - Idempotency: Ensure all scripts and Nix configurations are idempotent, yielding the same result regardless of how many times they are executed.
+   - Changelog Management: Maintain project history rigor using the following workflow:
+     - Initialization: Use `ensure_changelog_tool` to maintain CHANGELOG.md.
+     - Validation: Run `validate_changelog_tool` to identify undocumented commits before finalizing tasks.
+     - Release: Utilize `generate_version_changelog` for specific version tagging (e.g., v1.2.0).
+     - Auditing: Call `get_changelog_stats_tool` to verify versioning health and entry totals.
+```
+
+Use `ensure_agents_md_tool` to generate this file automatically, `validate_agents_md_tool` to check its quality, or `generate_agents_md_tool` to force-regenerate it.
 
 ## Contributing
 

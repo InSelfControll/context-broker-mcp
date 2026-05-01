@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastmcp import Context, FastMCP
 
 from context_broker.changelog_ttc.codebase.api import (
@@ -37,7 +39,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
             log(f"📝 ensure_changelog called: project_root='{root_display}'")
             await progress(ctx, f"📝 Checking CHANGELOG.md for: {root_display}")
 
-            root = resolve_project_root(project_root)
+            root = Path(resolve_project_root(project_root))
             try:
                 result = ensure_changelog(str(root))
                 status = result["status"]
@@ -56,7 +58,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
                 await progress(ctx, f"✅ Updated CHANGELOG.md with {commit_count} commits")
 
                 lines = [
-                    f"📝 CHANGELOG.md Updated",
+                    "📝 CHANGELOG.md Updated",
                     f"📁 Path: {root / 'CHANGELOG.md'}",
                     f"📊 Commits added: {commit_count}",
                 ]
@@ -94,7 +96,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
             log(f"📋 validate_changelog called: project_root='{root_display}'")
             await progress(ctx, f"📋 Validating CHANGELOG.md for: {root_display}")
 
-            root = resolve_project_root(project_root)
+            root = Path(resolve_project_root(project_root))
             try:
                 result = check_changelog_status(str(root))
                 status = result["status"]
@@ -102,7 +104,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
                 missing = result.get("missing_count", 0)
 
                 lines = [
-                    f"📋 CHANGELOG.md Validation Report",
+                    "📋 CHANGELOG.md Validation Report",
                     f"📁 Path: {root / 'CHANGELOG.md'}",
                     f"📊 Status: {status.upper()}",
                 ]
@@ -155,10 +157,13 @@ def register_changelog_tools(mcp: FastMCP) -> None:
         """
         with tracked_activity():
             root_display = project_root if project_root else "[auto-detected]"
-            log(f"🚀 generate_version_changelog called: version='{version}', project_root='{root_display}'")
+            log(
+                f"🚀 generate_version_changelog called: version='{version}', "
+                f"project_root='{root_display}'"
+            )
             await progress(ctx, f"🚀 Generating changelog for version {version}...")
 
-            root = resolve_project_root(project_root)
+            root = Path(resolve_project_root(project_root))
             try:
                 result = generate_changelog_for_version(str(root), version, since)
                 status = result["status"]
@@ -202,7 +207,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
             project_root: Project root path (auto-detected if empty)
         """
         with tracked_activity():
-            root = resolve_project_root(project_root)
+            root = Path(resolve_project_root(project_root))
             try:
                 result = get_changelog_stats(str(root))
                 status = result["status"]
