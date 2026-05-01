@@ -6,11 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] — 2026-04-30
+## [0.2.0] — 2026-05-01
 
 ### Added
 
-- ✨ configurable embedding model, device, and optional LLM env vars — `63d7d8f`
+- ✨ optional Redis query-cache backend and Honcho cross-chat context tools
+- ✨ track token savings history — `4d05994`
+- ✨ configurable embedding model (`CONTEXT_BROKER_EMBEDDING_MODEL`), device (`CONTEXT_BROKER_DEVICE`), and optional LLM env vars (`CONTEXT_BROKER_LLM_MODEL`, `CONTEXT_BROKER_LLM_BASE_URL`, `CONTEXT_BROKER_LLM_API_KEY`) — `63d7d8f`
 - ✨ automated feature documentation generation — `a5f9c4b`
 - ✨ automated CHANGELOG.md generation from git commits — `4bef4ef`
 - ✨ AGENTS.md auto-generation, lifecycle watchdogs, and resource management — `97a4054`
@@ -52,11 +54,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 📝 Merge pull request #9 from InSelfControll/dependabot/uv/fastmcp-3.2.0 ([#9](https://github.com/yourusername/context-broker-mcp/pull/9)) — `630191d`
 - 📝 Update README.md — `bba8ad3`
 
-## [Unreleased]
+### AGENTS.md Management Suite
 
-### Added
-
-#### AGENTS.md Management Suite
 - **New MCP Tools** for automated AGENTS.md lifecycle management:
   - `ensure_agents_md_tool` — Creates AGENTS.md automatically if missing, preserving existing files.
   - `validate_agents_md_tool` — Validates existing AGENTS.md and reports missing sections with a quality score (0–100).
@@ -98,7 +97,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Validation scoring (missing, valid, needs-work)
   - Task-level flows (create, overwrite, no-force, scan)
 
-#### Process Lifecycle & Resource Management
+### Process Lifecycle & Resource Management
+
 - **`context_broker/lifecycle.py`**: New module providing production-grade process lifecycle management:
   - **Parent Death Detection**: Automatically exits the MCP server when its launching editor/host process disappears (prevents orphaned processes).
   - **Idle Resource Cleanup**: Releases in-memory model/index caches after prolonged idle periods to prevent RAM bloat.
@@ -111,66 +111,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` — Idle cache release timeout, `0` disables (default: `900`)
   - `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` — Idle cleanup check interval (default: `30`)
 
-#### Configuration Improvements
+### Configuration Improvements
+
 - **`config.py`**: Added safe env-var parsing helpers:
   - `_get_env_int(name, default)` — Parses integer env vars with fallback
   - `_get_env_float(name, default)` — Parses float env vars with fallback
 - `MODEL_LOCAL_ONLY` now forces offline mode for HuggingFace and Transformers by setting `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`.
 - `WORKER_CORES` automatically limits PyTorch, NumPy, and MKL thread pools to prevent CPU over-subscription.
 
-### Changed
+### Modular Architecture Refinements
 
-#### Modular Architecture Refinements
 - **`server_ttc/codebase/assembly.py`**: Added `register_agents_tools()` to the MCP server initialization pipeline.
 - **`server_ttc/codebase/resources.py`**: Refactored resource and prompt registration for consistency with the TTC pattern.
 - **Various TTC modules**: Applied minor formatting and consistency improvements across `indexer_ttc`, `project_ttc`, `storage_ttc`, and `server_ttc` packages.
 
-#### Documentation
-- **`README.md`**: Documented all new lifecycle environment variables and their defaults.
+### Resource Leak Fixes
 
-### Fixed
-
-- **Resource leaks**: In-memory indexes, query caches, token reports, and model encoders are now properly released during idle cleanup and process shutdown.
+- **In-memory indexes, query caches, token reports, and model encoders** are now properly released during idle cleanup and process shutdown.
 - **Orphaned processes**: MCP server no longer lingers indefinitely when the AI editor (Claude Desktop, etc.) is closed.
 
----
+### Secret File Protection (Defense-in-Depth)
 
-## [0.1.0] – Previous Release
-
-### Added
-- Semantic code search using sentence transformers (`all-MiniLM-L6-v2`)
-- MCP protocol server with `stdio`, `sse`, `streamable-http`, and `ws` transports
-- Auto project root detection via marker scoring (`.git`, `pyproject.toml`, `package.json`, etc.)
-- Smart caching with file-modification tracking
-- Token efficiency reporting for every query
-- Persistent search results storage (global, in-project, or both modes)
-- `.gitignore` and `.dockerignore` respect
-- Modular TTC (Task-Tool-Codebase) architecture
-- Progress notifications and rich logging
-
----
-
-## What We've Achieved So Far
-
-1. **Production-Ready MCP Server**: Context Broker is a fully functional semantic code search server that integrates with Claude Desktop, Cursor, and any MCP-compatible client.
-
-2. **Autonomous Project Onboarding**: The new AGENTS.md management suite enables AI assistants to automatically discover project context, generate onboarding documentation, and validate that existing documentation is complete — all through MCP tool calls.
-
-3. **Resource-Safe Operations**: With lifecycle watchdogs, the server cleans up after itself. It won't leak RAM from embedding models or leave zombie processes when editors close.
-
-4. **Cross-Platform Project Intelligence**: Automatic detection of Python, Node.js, Rust, Go, Java, Docker, and generic projects means the AGENTS.md generator works out of the box for any codebase.
-
-5. **Quality Gates**: The validation engine ensures AGENTS.md files contain meaningful project goals and conventions — not just boilerplate.
-
-6. **Extensible Architecture**: The TTC pattern makes it trivial to add new tool categories. The agents module followed the same blueprint as search, storage, and token modules.
-
----
-
-## [Unreleased] — Security Hardening
-
-### Added
-
-#### Secret File Protection (Defense-in-Depth)
 - **Hard-coded secret file patterns** (`SECRET_FILE_PATTERNS`) that CANNOT be overridden by `.gitignore` or user configuration:
   - Environment files: `.env`, `.env.*`, `*.env`, `*.env.*`
   - AWS credentials: `.aws/credentials`, `.aws/config`
@@ -206,12 +167,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `read_file_content()` blocking (5 tests)
   - Configuration and audit logging (2 tests)
 
-### Why This Matters
+---
 
-Before this change, Context Broker relied solely on `.gitignore` patterns to exclude sensitive files. This was insufficient because:
-- Developers sometimes commit `.env` files accidentally
-- `.env` files may be renamed (e.g., `config.txt`, `settings.local`)
-- Secret files may be outside `.gitignore` scope (e.g., SSH keys in `~/.ssh`)
-- AI providers receive ALL indexed file content through MCP tool responses
+## [0.1.0] — 2026-04-28
 
-With these measures, **secret files are physically blocked from being read, embedded, or transmitted** — even if a developer makes a mistake.
+### Added
+
+- Semantic code search using sentence transformers (`all-MiniLM-L6-v2`)
+- MCP protocol server with `stdio`, `sse`, `streamable-http`, and `ws` transports
+- Auto project root detection via marker scoring (`.git`, `pyproject.toml`, `package.json`, etc.)
+- Smart caching with file-modification tracking
+- Token efficiency reporting for every query
+- Persistent search results storage (global, in-project, or both modes)
+- `.gitignore` and `.dockerignore` respect
+- Modular TTC (Task-Tool-Codebase) architecture
+- Progress notifications and rich logging
