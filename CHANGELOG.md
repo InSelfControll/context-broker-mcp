@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [0.3.0] — 2026-05-14
 
 ### Added
 
@@ -22,12 +22,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - ✨ Redis-backed chat-payload cache (`CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS`, default 300). `load_chat_context` is served from Redis with TTL — works for both Honcho and Redis context backends. Save invalidates the per-session entries. Cache hits include `"cached": true` in the payload.
 - ✨ Redis-backed cross-chat context backend (`CONTEXT_BROKER_CONTEXT_BACKEND=redis`) mirroring Honcho's `save_chat_context` / `load_chat_context` API. Messages are stored under `<prefix>:ctx:project:<digest>:session:<id>` so chats survive across sessions.
 - ✨ Web-only cross-chat dashboard (`python -m context_broker dashboard` or `context-broker-dashboard`) built on Starlette. Browses projects → sessions → messages stored by the Redis backend. JSON API mirrors the HTML routes.
+- ✨ `context-broker-dashboard` console script registered as a project entry point alongside the existing `context-broker` MCP server.
 - ✨ Dashboard host/port env vars: `CONTEXT_BROKER_DASHBOARD_HOST` (default `127.0.0.1`) and `CONTEXT_BROKER_DASHBOARD_PORT` (default `8770`).
-- ✨ Optional install extra `context-broker[dashboard]` (Starlette + uvicorn + Jinja2).
+- ✨ `context_backend_status` MCP tool — reports the configured cross-chat backend (`honcho` / `redis` / `disabled`), connection health, and the resolved identity profile in one call. Useful for editors that want to surface backend status without scraping `get_storage_config`.
+- ✨ Optional install extras: `context-broker[dashboard]` (Starlette + uvicorn + Jinja2 + python-dotenv) and `context-broker[integrations]` (honcho-ai + redis client) so cross-chat support is opt-in rather than a hard dependency.
+- 🧪 Comprehensive integration test suite (`tests/test_integrations.py`, ~1.2k lines) exercising both Honcho and Redis context backends, the chat ledger, the chat-payload cache, identity resolution, dashboard data tasks, and `record_turn` / `record_session` flows end-to-end.
 
 ### Removed
 
 - 🔥 Redis **query-cache** backend (the prior caching role); query cache is local-JSON only. Redis remains supported, but only as the cross-chat context backend described above.
+
+### Fixed
+
+- 🐛 Dashboard double-launch no longer crashes with `OSError: [Errno 98] Address already in use`. The new single-instance guard probes `/api/status` first and exits 0 when an existing dashboard is already serving on the configured host/port.
+- 🐛 `load_chat_context` immediately following a `save_chat_context` no longer returns a stale-empty payload from the cache layer; saves now invalidate prior cache entries and warm the default-params signature in the same call.
+- 🐛 MCP server no longer overrides parent-process environment variables when auto-loading `.env`; the walker stops at the first match and only sets keys that aren't already in `os.environ`.
 
 ## [0.2.0] — 2026-05-01
 
