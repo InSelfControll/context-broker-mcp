@@ -69,8 +69,91 @@ pip install -e .
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` | Any valid path |
 | `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` | `0`, `1`, `true`, `false` |
 | `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading from local cache only (no network) | `1` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend | `none` | `none`, `honcho`, `redis` |
+| `CONTEXT_BROKER_HONCHO_WORKSPACE_ID` | Honcho workspace id | `context-broker` | Any workspace id |
+| `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Honcho session id prefix | `context-broker` | Any safe prefix |
+| `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` | Any positive integer |
+| `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session | `1` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_REDIS_URL` | Redis URL when `CONTEXT_BACKEND=redis` | *(empty)* | `redis://`, `rediss://`, `unix://` |
+| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for the context backend | `context-broker` | Any safe prefix |
+| `CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS` | TTL for the Redis chat-payload cache (0 disables) | `300` | Any non-negative integer |
+| `CONTEXT_BROKER_AUTO_WARM_CACHE_ON_SAVE` | After every save, invalidate-then-warm the default-params cache signature so the next load is a cached hit | `1` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_USE_ACCOUNT_NAME` | Use the OS account name as the default user peer id | `0` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` | Explicit override for the resolved user peer id | *(empty)* | Any name; sanitized to alnum/`-_.` |
+| `CONTEXT_BROKER_DASHBOARD_HOST` | Bind host for the web dashboard | `127.0.0.1` | Any host |
+| `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web dashboard | `8770` | Any free port |
 
 By default, Context Broker uses half of available CPU cores for indexing/search workloads.
+
+### Persistence Model
+
+Context Broker keeps persistence intentionally narrow:
+
+- **Cross-chat context** → Honcho **or** Redis (choose one — see below).
+- **User memory / saved search results** → local JSON files under the configured storage directory.
+- **Token history** → local JSON files under the configured storage directory.
+
+### Cross-Chat Context Backend
+
+Pick one of the supported backends with `CONTEXT_BROKER_CONTEXT_BACKEND`.
+
+**Honcho:**
+
+```bash
+CONTEXT_BROKER_CONTEXT_BACKEND=honcho
+CONTEXT_BROKER_HONCHO_WORKSPACE_ID=context-broker
+```
+
+**Redis (Honcho-equivalent cross-session store):**
+
+```bash
+CONTEXT_BROKER_CONTEXT_BACKEND=redis
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
+```
+
+The Redis backend stores chat turns under `<prefix>:ctx:project:<digest>:session:<id>` lists, indexes projects in `<prefix>:ctx:projects`, and supports the same `save_chat_context` / `load_chat_context` MCP tools as Honcho. Install with `pip install "context-broker[integrations]"`.
+
+### Persistence Semantics
+
+- **Append, never overwrite.** Every `save_chat_context` / `record_turn` / `record_session` call *appends* to the session — both in Redis (`RPUSH`) and in Honcho (`session.add_messages`). Prior turns are never lost.
+- **Dual write to JSON.** Each successful save is mirrored to a local-JSON chat ledger at `<storage>/chats/<project_digest>/<session_id>.json` (atomic temp-rename writes). The ledger survives Redis wipes / Honcho outages and is human-readable. Saves return `ledger_files: [...]` listing what was written.
+- **Warm-on-save by default.** Every save invalidates prior cache entries for the session AND immediately warms the default-params cache signature with the full freshly-persisted session. So a `load_chat_context` right after a save is a cached hit, not a miss-then-fill round trip. Disable with `CONTEXT_BROKER_AUTO_WARM_CACHE_ON_SAVE=0`. Save responses include `cache_warmed: true|false`.
+- **Auto-record helpers.** `record_turn` (single exchange) and `record_session` (entire conversation in one call, takes `turns: [{user, assistant}, ...]`). Docstrings are engineered so LLM clients auto-invoke them.
+- **Cross-session retrieval.** `load_cross_session_context(project_root, search_query, top_k)` scans every session of one project and returns the most important matching turns, sorted by recency, with `session_id` attribution. Requires the Redis backend.
+- **Per-user activity log.** Every save also records the timestamp under `<prefix>:ctx:project:<digest>:user:<peer_id>:requests` (LIST of `{timestamp, session_id}`), plus a per-user summary HASH `{first_seen, last_seen, request_count}`. Inspect via the `list_user_activity` MCP tool (omit `peer_id` for a per-user summary; pass it for the full audit log) or browse it in the dashboard at `/projects/{digest}/users` and `/projects/{digest}/users/{peer_id}`. Useful for "when did ofir last ask something" or "list every request alice has made". Requires the Redis backend.
+
+### User Identity
+
+By default, every saved turn records the questioner under the generic peer id `user`. Set `CONTEXT_BROKER_USE_ACCOUNT_NAME=1` to instead resolve the user peer id from the OS account (`getpass.getuser()`, e.g. `ofir`). The dashboard then shows each user's actual account name. Priority order (highest first):
+
+1. Explicit `user_peer_id` passed to `save_chat_context` / `load_chat_context`.
+2. `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` (free-form, sanitized to alnum + `-_.`).
+3. OS account name when `CONTEXT_BROKER_USE_ACCOUNT_NAME=1`.
+4. `CONTEXT_BROKER_HONCHO_USER_PEER_ID` (default `user`).
+
+The assistant peer id is never affected. Inspect the resolved value via `context_backend_status` (`.identity.resolved_user_peer_id`) or `get_storage_config`.
+
+### Chat-Payload Cache
+
+When `CONTEXT_BROKER_REDIS_URL` is set, `load_chat_context` results are cached in Redis with TTL `CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS` (default 300, set `0` to disable). The cache works for *both* backends — including Honcho — so repeated loads of the same `(project, session)` hit Redis instead of Honcho's HTTP API. Each cache entry is keyed by load parameters (tokens, search query, peer ids, etc.) and is invalidated automatically when `save_chat_context` writes new messages for that session. Cache hits flag the response with `"cached": true`.
+
+### Web Dashboard (cross-chats per project)
+
+Run the dashboard *only* (no MCP server attached) to browse stored cross-chats:
+
+```bash
+CONTEXT_BROKER_CONTEXT_BACKEND=redis \
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0 \
+python -m context_broker dashboard
+# or, after install:
+context-broker-dashboard
+```
+
+By default it binds `127.0.0.1:8770`. The dashboard requires the Redis backend to enumerate projects; with Honcho selected, the API will return a 400 explaining the limitation. Install the web extras once: `pip install "context-broker[dashboard]"`.
+
+**Config via `.env`.** On startup, Context Broker (both the MCP server and the dashboard) walks up from the current directory looking for a `.env` file and loads its values into the process environment — but only for variables not already set by the parent. Drop a `.env` at the repo root once and every editor's MCP client (Claude Code, Codex, Cursor, …) shares the same Redis/dashboard config without per-shell `export` lines. Per-editor env overrides still win.
+
+**Single instance.** Starting the dashboard when one is already running on the configured host/port is a no-op: the new process probes `/api/status`, recognises its own banner, prints `dashboard already running … leaving it alone`, and exits 0. So wiring `context-broker-dashboard` as a launch step in multiple editor configs won't spawn a fleet of duplicates.
 
 ### MCP Client Configuration
 

@@ -435,3 +435,105 @@ CACHE_DIR: str = ".cache"
 CACHE_FILE: str = "context-broker.json"
 """Cache file name."""
 
+# Query cache is always persisted as local JSON.
+
+
+# =============================================================================
+# REDIS CONFIGURATION (used by the Redis cross-chat context backend only)
+# =============================================================================
+
+REDIS_URL: str = os.environ.get("CONTEXT_BROKER_REDIS_URL", "")
+"""Redis connection URL used when CONTEXT_BROKER_CONTEXT_BACKEND=redis."""
+
+REDIS_KEY_PREFIX: str = os.environ.get("CONTEXT_BROKER_REDIS_KEY_PREFIX", "context-broker")
+"""Prefix for Redis keys so multiple deployments can share one Redis instance safely."""
+
+CHAT_CACHE_TTL_SECONDS: int = max(
+    0, _get_env_int("CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS", 300)
+)
+"""TTL for the Redis chat-payload cache (entries from load_chat_context).
+
+0 disables the cache. Active whenever CONTEXT_BROKER_REDIS_URL is set, regardless
+of which cross-chat context backend is selected.
+"""
+
+AUTO_WARM_CACHE_ON_SAVE: bool = os.environ.get(
+    "CONTEXT_BROKER_AUTO_WARM_CACHE_ON_SAVE", "1"
+).lower() in {"1", "true", "yes", "on"}
+"""When enabled (the default), every save_chat_context / record_turn call
+invalidates the per-session cache entries AND immediately warms the
+default-params signature with the freshly persisted session. So a load right
+after a save is a cached hit instead of a miss-then-fill round trip.
+
+Set to 0 to fall back to invalidate-only behavior.
+"""
+
+
+# =============================================================================
+# CROSS-CHAT CONTEXT CONFIGURATION
+# =============================================================================
+
+CONTEXT_BACKEND: str = os.environ.get("CONTEXT_BROKER_CONTEXT_BACKEND", "none").lower()
+"""Cross-chat context backend: 'none', 'honcho', or 'redis'.
+
+'redis' uses Redis as a Honcho-equivalent store for cross-session context
+sharing — messages are keyed by project + session_id and survive across chats.
+"""
+
+HONCHO_WORKSPACE_ID: str = os.environ.get("CONTEXT_BROKER_HONCHO_WORKSPACE_ID", "context-broker")
+"""Honcho workspace id used when CONTEXT_BROKER_CONTEXT_BACKEND=honcho."""
+
+HONCHO_SESSION_PREFIX: str = os.environ.get("CONTEXT_BROKER_HONCHO_SESSION_PREFIX", "context-broker")
+"""Prefix applied to Honcho session ids created by this MCP server."""
+
+HONCHO_USER_PEER_ID: str = os.environ.get("CONTEXT_BROKER_HONCHO_USER_PEER_ID", "user")
+"""Default Honcho peer id for user-authored messages."""
+
+HONCHO_ASSISTANT_PEER_ID: str = os.environ.get(
+    "CONTEXT_BROKER_HONCHO_ASSISTANT_PEER_ID", "assistant"
+)
+"""Default Honcho peer id for assistant-authored messages."""
+
+HONCHO_CONTEXT_TOKENS: int = max(1, _get_env_int("CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS", 2000))
+"""Default token budget when loading Honcho session context."""
+
+HONCHO_LIMIT_TO_SESSION: bool = os.environ.get(
+    "CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION", "1"
+).lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+"""Limit Honcho representation/search context to the selected session by default."""
+
+
+# ---------------------------------------------------------------------------
+# USER IDENTITY (who is asking the question?)
+# ---------------------------------------------------------------------------
+
+USE_ACCOUNT_NAME: bool = os.environ.get(
+    "CONTEXT_BROKER_USE_ACCOUNT_NAME", "0"
+).lower() in {"1", "true", "yes", "on"}
+"""When enabled, default the user peer id to the OS account name instead of
+``HONCHO_USER_PEER_ID`` ('user'). Only affects the user peer — assistant stays
+generic. Explicit ``user_peer_id`` arguments to ``save_chat_context`` /
+``load_chat_context`` always win.
+"""
+
+ACCOUNT_NAME_OVERRIDE: str = os.environ.get("CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE", "")
+"""Explicit override for the resolved account name. Takes priority over
+``getpass.getuser()`` when ``CONTEXT_BROKER_USE_ACCOUNT_NAME`` is enabled.
+"""
+
+
+# =============================================================================
+# DASHBOARD CONFIGURATION (web-only cross-chat viewer)
+# =============================================================================
+
+DASHBOARD_HOST: str = os.environ.get("CONTEXT_BROKER_DASHBOARD_HOST", "127.0.0.1")
+"""Host bind address for the web-only cross-chat dashboard."""
+
+DASHBOARD_PORT: int = int(os.environ.get("CONTEXT_BROKER_DASHBOARD_PORT", "8770"))
+"""Port for the web-only cross-chat dashboard."""
+
