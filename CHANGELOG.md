@@ -6,11 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- ✨ Per-user activity audit in Redis. On every save, the broker now SADDs the speaker into `<prefix>:ctx:project:<digest>:users`, bumps `first_seen` / `last_seen` / `request_count` in a per-user HASH, and appends `{timestamp, session_id}` to a per-user LIST. New MCP tool `list_user_activity(project_root, peer_id?, limit?)` returns either the per-user summary or a single user's full request log. New dashboard routes `/projects/{digest}/users` and `/projects/{digest}/users/{peer_id}` plus JSON twins under `/api/`. Answers "when did this user last ask something?" without scanning every session.
+- ✨ Default-on warm-on-save (`CONTEXT_BROKER_AUTO_WARM_CACHE_ON_SAVE=1`). Every `save_chat_context` / `record_turn` / `record_session` now invalidates all prior cache entries for the session AND immediately warms the default-params signature with the freshly persisted session. A `load_chat_context` right after a save is a cached hit, not a miss-then-fill round trip. Save responses include `cache_warmed: true|false`.
+- ✨ `record_session` MCP tool — bulk-persist an entire conversation in one call via `turns: [{user, assistant}, ...]`. Each turn is appended (no overwrites), mirrored to the JSON ledger, and the cache is warmed once at the end. Use when you have the full conversation in context (e.g. "save the whole chat") instead of firing N `record_turn` calls.
+- ✨ Local-JSON chat ledger: every `save_chat_context` / `record_turn` is dual-written to `<storage>/chats/<project_digest>/<session_id>.json` (atomic temp-rename, append-only). Chat history now survives Redis wipes or Honcho outages and is human-readable on disk. Save responses include `ledger_files: [...]`.
+- ✨ `record_turn` MCP tool — thin convenience wrapper over `save_chat_context` with a docstring engineered to make LLM clients auto-invoke it after every response so chat history accumulates per session without manual prompting.
+- ✨ `load_cross_session_context` MCP tool — scans every session of a project, filters by `search_query` (substring, case-insensitive), and returns the top-N matches across sessions sorted by recency with `session_id` attribution. Requires the Redis backend.
+- ✨ Opt-in user-identity resolver (`CONTEXT_BROKER_USE_ACCOUNT_NAME=1` plus optional `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE`). Saved/loaded chats record the questioner under the OS account name (e.g. `ofir`) instead of the generic `user`, so the dashboard shows who actually asked. Explicit `user_peer_id` args from MCP callers still win; assistant peer id is untouched. Surfaced in `context_backend_status.identity` and `get_storage_config`.
+- ✨ `.env` auto-loading for the MCP server and dashboard entrypoints. Walks up from CWD, never overrides parent env. Lets a single `.env` feed every editor's MCP client (Claude Code, Codex, Cursor, …).
+- ✨ Dashboard single-instance guard. Re-launching `python -m context_broker dashboard` when one is already running probes `/api/status`, recognises the existing instance, and exits 0 instead of failing with port-in-use.
+- ✨ Redis-backed chat-payload cache (`CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS`, default 300). `load_chat_context` is served from Redis with TTL — works for both Honcho and Redis context backends. Save invalidates the per-session entries. Cache hits include `"cached": true` in the payload.
+- ✨ Redis-backed cross-chat context backend (`CONTEXT_BROKER_CONTEXT_BACKEND=redis`) mirroring Honcho's `save_chat_context` / `load_chat_context` API. Messages are stored under `<prefix>:ctx:project:<digest>:session:<id>` so chats survive across sessions.
+- ✨ Web-only cross-chat dashboard (`python -m context_broker dashboard` or `context-broker-dashboard`) built on Starlette. Browses projects → sessions → messages stored by the Redis backend. JSON API mirrors the HTML routes.
+- ✨ Dashboard host/port env vars: `CONTEXT_BROKER_DASHBOARD_HOST` (default `127.0.0.1`) and `CONTEXT_BROKER_DASHBOARD_PORT` (default `8770`).
+- ✨ Optional install extra `context-broker[dashboard]` (Starlette + uvicorn + Jinja2).
+
+### Removed
+
+- 🔥 Redis **query-cache** backend (the prior caching role); query cache is local-JSON only. Redis remains supported, but only as the cross-chat context backend described above.
+
 ## [0.2.0] — 2026-05-01
 
 ### Added
 
-- ✨ optional Redis query-cache backend and Honcho cross-chat context tools
+- ✨ optional Honcho cross-chat context tools
 - ✨ track token savings history — `4d05994`
 - ✨ configurable embedding model (`CONTEXT_BROKER_EMBEDDING_MODEL`), device (`CONTEXT_BROKER_DEVICE`), and optional LLM env vars (`CONTEXT_BROKER_LLM_MODEL`, `CONTEXT_BROKER_LLM_BASE_URL`, `CONTEXT_BROKER_LLM_API_KEY`) — `63d7d8f`
 - ✨ automated feature documentation generation — `a5f9c4b`

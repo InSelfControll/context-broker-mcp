@@ -1,5 +1,8 @@
 """
 Cache helpers for semantic search queries.
+
+The query cache is persisted as local JSON only — no external services
+(no Redis, no pub/sub, no queues).
 """
 
 import hashlib
@@ -38,9 +41,10 @@ def load_query_cache(project_root: str) -> dict[str, Any]:
 
 
 def save_query_cache(project_root: str) -> None:
-    """Persist query cache to disk."""
+    """Persist query cache to local JSON."""
     if project_root not in state.QUERY_CACHE:
         return
+
     cache_path = get_cache_path(project_root)
     try:
         with open(cache_path, "w") as f:
@@ -61,8 +65,18 @@ def get_file_mtimes(paths: list[str]) -> dict[str, float]:
     return mtimes
 
 
+def generate_index_fingerprint(file_mtimes: dict[str, float]) -> str:
+    """Generate a stable fingerprint for the indexed file set."""
+    payload = json.dumps(file_mtimes, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def is_cache_valid(cache_entry: dict[str, Any], current_mtimes: dict[str, float]) -> bool:
-    """Validate cache entry by file mtimes."""
+    """Validate cache entry by full-index fingerprint or legacy result mtimes."""
+    index_fingerprint = cache_entry.get("index_fingerprint")
+    if index_fingerprint is not None:
+        return index_fingerprint == generate_index_fingerprint(current_mtimes)
+
     cached_mtimes = cache_entry.get("file_mtimes", {})
     for path, cached_mtime in cached_mtimes.items():
         if current_mtimes.get(path, 0) != cached_mtime:

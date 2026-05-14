@@ -309,11 +309,14 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
-| `CONTEXT_BROKER_CACHE_BACKEND` | Query-cache backend: `local` or `redis` | `local` |
-| `CONTEXT_BROKER_REDIS_URL` | Redis URL when Redis cache is enabled | *(empty)* |
-| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for query-cache entries | `context-broker` |
-| `CONTEXT_BROKER_REDIS_TTL_SECONDS` | Redis query-cache TTL in seconds (`0` disables) | `0` |
-| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none` or `honcho` | `none` |
+| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none`, `honcho`, or `redis` | `none` |
+| `CONTEXT_BROKER_REDIS_URL` | Redis URL when `CONTEXT_BACKEND=redis` | *(empty)* |
+| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for the context backend | `context-broker` |
+| `CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS` | TTL for the Redis chat-payload cache (`0` disables) | `300` |
+| `CONTEXT_BROKER_USE_ACCOUNT_NAME` | Use the OS account name as the default user peer id | `0` |
+| `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` | Explicit override for the resolved user peer id | *(empty)* |
+| `CONTEXT_BROKER_DASHBOARD_HOST` | Bind host for the web-only dashboard | `127.0.0.1` |
+| `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web-only dashboard | `8770` |
 | `CONTEXT_BROKER_HONCHO_WORKSPACE_ID` | Honcho workspace id | `context-broker` |
 | `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Prefix for Honcho session ids | `context-broker` |
 | `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
@@ -322,18 +325,27 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
 
-### Optional Cache and Context Backends
+### Persistence Model
 
-The default remains fully local: query results are cached under `.cache/context-broker.json`, and saved results/token history stay in `.context-broker/` or `~/.context-broker/`.
+- **Query cache** → local JSON at `.cache/context-broker.json`.
+- **Saved results / user memory** → local JSON under `.context-broker/` or `~/.context-broker/`.
+- **Token history** → local JSON under the same storage directories.
+- **Cross-chat context** → optional Honcho **or** Redis backend (see below).
+- **Chat history** → dual-written. Every save lands in the chosen context backend (Honcho/Redis) **and** in a local-JSON ledger at `<storage>/chats/<project_digest>/<session_id>.json`. Saves *append*; prior turns are never overwritten. Use `record_turn` for an explicit "save the exchange I just had" tool and `load_cross_session_context` for cross-session retrieval.
 
-To use Redis for the derived query cache:
+### Web Dashboard
+
+Browse stored cross-chats per project without running the MCP server:
 
 ```bash
-CONTEXT_BROKER_CACHE_BACKEND=redis
-CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
+CONTEXT_BROKER_CONTEXT_BACKEND=redis \
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0 \
+python -m context_broker dashboard
 ```
 
-Redis stores only query-cache metadata such as result paths and mtimes. Saved results and token history still use the configured storage mode.
+Binds `127.0.0.1:8770` by default (override with `CONTEXT_BROKER_DASHBOARD_HOST` / `CONTEXT_BROKER_DASHBOARD_PORT`). Install the optional extras with `pip install "context-broker[dashboard]"`. The dashboard requires the Redis context backend to enumerate projects.
+
+`.env` files are picked up automatically (nearest file walking up from CWD) — both the MCP server and the dashboard load them, without overriding env already set by the parent process. Re-running the dashboard when one is already serving on the configured host/port is a no-op: the second process probes `/api/status`, recognises the existing instance, and exits cleanly. Safe to wire as an auto-launch step in every editor's MCP config.
 
 To use Honcho for context between chats:
 
@@ -343,6 +355,15 @@ CONTEXT_BROKER_HONCHO_WORKSPACE_ID=context-broker
 ```
 
 Install optional integrations with `pip install "context-broker[integrations]"` or the equivalent UV command. The Honcho tools are explicit: call `save_chat_context` to store messages and `load_chat_context` to retrieve session context. Honcho context is session-limited by default to avoid mixing unrelated project or user memory.
+
+Switch to the Redis-backed equivalent with:
+
+```bash
+CONTEXT_BROKER_CONTEXT_BACKEND=redis
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
+```
+
+The same `save_chat_context` / `load_chat_context` MCP tools then write to Redis instead of Honcho. The Redis backend is what the web dashboard reads from.
 
 ### Storage Modes
 
@@ -523,7 +544,7 @@ Production API server with real-time search and secure authentication.
 ## Overview
 - Version: 1.0.0
 - License: MIT
-- Stack: Python 3.13, FastAPI, sentence-transformers, Redis
+- Stack: Python 3.13, FastMCP, sentence-transformers, local JSON persistence
 
 ## Entry Points
 - `context_broker/server.py` — MCP server entry
