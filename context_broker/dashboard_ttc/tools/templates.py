@@ -42,7 +42,9 @@ _STYLE = """
          border: 1px solid #21262d; background: #161b22; }
   .msg.user { border-left: 3px solid #79c0ff; }
   .msg.assistant { border-left: 3px solid #7ee787; }
-  .msg .peer { font-size: 0.75rem; color: #8b949e; margin-bottom: 0.3rem; }
+  .msg .peer { font-size: 0.75rem; color: #8b949e; margin-bottom: 0.3rem;
+               display: flex; justify-content: space-between; gap: 1rem; }
+  .msg .peer .ts { color: #6e7681; font-variant-numeric: tabular-nums; }
   .msg pre { margin: 0; white-space: pre-wrap; word-break: break-word;
              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 </style>
@@ -102,13 +104,14 @@ def render_project_page(
             f"{escape(s['session_id'])}</a></td>"
             f"<td>{escape(s['full_session_id'])}</td>"
             f"<td>{int(s.get('message_count', 0))}</td>"
+            f"<td>{escape(_fmt_ts(s.get('last_message_at')))}</td>"
             "</tr>"
             for s in sessions
         )
         body = (
             crumb
             + "<table><thead><tr><th>Session</th><th>Full ID</th>"
-            "<th>Messages</th></tr></thead><tbody>"
+            "<th>Messages</th><th>Last message</th></tr></thead><tbody>"
             f"{rows}</tbody></table>"
         )
     return _layout(f"Project {digest}", body, backend)
@@ -206,7 +209,10 @@ def render_messages_page(session: dict[str, Any], *, backend: str) -> str:
     else:
         rendered = "".join(
             f"<div class='msg {_classify_peer(m.get('peer_id', ''))}'>"
-            f"<div class='peer'>{escape(str(m.get('peer_id', 'unknown')))}</div>"
+            "<div class='peer'>"
+            f"<span>{escape(str(m.get('peer_id', 'unknown')))}</span>"
+            f"<span class='ts'>{escape(_fmt_ts(m.get('created_at')))}</span>"
+            "</div>"
             f"<pre>{escape(str(m.get('content', '')))}</pre>"
             "</div>"
             for m in messages

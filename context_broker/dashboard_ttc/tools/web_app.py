@@ -16,7 +16,7 @@ from typing import Any
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse as _HTMLResponse, JSONResponse as _JSONResponse
 from starlette.routing import Route
 
 from context_broker.dashboard_ttc.tasks import data_tasks
@@ -28,8 +28,21 @@ from context_broker.dashboard_ttc.tools.templates import (
     render_users_page,
 )
 
+_NO_STORE = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
 
-def _json_error(exc: Exception, status_code: int = 400) -> JSONResponse:
+
+def HTMLResponse(content: str, status_code: int = 200) -> _HTMLResponse:
+    """HTMLResponse that disables caching so the dashboard reflects the latest
+    Redis state on every page load."""
+    return _HTMLResponse(content, status_code=status_code, headers=_NO_STORE)
+
+
+def JSONResponse(content: Any, status_code: int = 200) -> _JSONResponse:
+    """JSONResponse that disables caching for the same reason."""
+    return _JSONResponse(content, status_code=status_code, headers=_NO_STORE)
+
+
+def _json_error(exc: Exception, status_code: int = 400) -> _JSONResponse:
     return JSONResponse({"error": str(exc)}, status_code=status_code)
 
 
@@ -37,7 +50,7 @@ def _backend_banner() -> dict[str, Any]:
     return {"backend": data_tasks.active_backend()}
 
 
-async def index(_: Request) -> HTMLResponse:
+async def index(_: Request) -> _HTMLResponse:
     """Render the project list."""
     try:
         projects = data_tasks.list_projects()
@@ -46,7 +59,7 @@ async def index(_: Request) -> HTMLResponse:
     return HTMLResponse(render_projects_page(projects, backend=data_tasks.active_backend()))
 
 
-async def project_page(request: Request) -> HTMLResponse:
+async def project_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     try:
         sessions = data_tasks.list_sessions(digest)
@@ -55,7 +68,7 @@ async def project_page(request: Request) -> HTMLResponse:
     return HTMLResponse(render_project_page(digest, sessions, backend=data_tasks.active_backend()))
 
 
-async def session_page(request: Request) -> HTMLResponse:
+async def session_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     session_id = request.path_params["session_id"]
     try:
@@ -65,7 +78,7 @@ async def session_page(request: Request) -> HTMLResponse:
     return HTMLResponse(render_messages_page(session, backend=data_tasks.active_backend()))
 
 
-async def users_page(request: Request) -> HTMLResponse:
+async def users_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     try:
         users = data_tasks.list_users(digest)
@@ -76,7 +89,7 @@ async def users_page(request: Request) -> HTMLResponse:
     )
 
 
-async def user_activity_page(request: Request) -> HTMLResponse:
+async def user_activity_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     peer_id = request.path_params["peer_id"]
     try:
@@ -88,18 +101,18 @@ async def user_activity_page(request: Request) -> HTMLResponse:
     )
 
 
-async def api_status(_: Request) -> JSONResponse:
+async def api_status(_: Request) -> _JSONResponse:
     return JSONResponse(_backend_banner())
 
 
-async def api_projects(_: Request) -> JSONResponse:
+async def api_projects(_: Request) -> _JSONResponse:
     try:
         return JSONResponse({"projects": data_tasks.list_projects(), **_backend_banner()})
     except data_tasks.DashboardError as e:
         return _json_error(e)
 
 
-async def api_sessions(request: Request) -> JSONResponse:
+async def api_sessions(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     try:
         return JSONResponse(
@@ -109,7 +122,7 @@ async def api_sessions(request: Request) -> JSONResponse:
         return _json_error(e)
 
 
-async def api_session(request: Request) -> JSONResponse:
+async def api_session(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     session_id = request.path_params["session_id"]
     try:
@@ -118,7 +131,7 @@ async def api_session(request: Request) -> JSONResponse:
         return _json_error(e)
 
 
-async def api_users(request: Request) -> JSONResponse:
+async def api_users(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     try:
         return JSONResponse(
@@ -128,7 +141,7 @@ async def api_users(request: Request) -> JSONResponse:
         return _json_error(e)
 
 
-async def api_user_activity(request: Request) -> JSONResponse:
+async def api_user_activity(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     peer_id = request.path_params["peer_id"]
     try:

@@ -117,8 +117,14 @@ def put(
     signature = _signature(**params)
     key = _key(project_root, session_id, signature)
     try:
-        client.set(key, json.dumps(payload, ensure_ascii=False, default=str))
-        client.expire(key, CHAT_CACHE_TTL_SECONDS)
+        # SET with EX in one round-trip so the key can never persist without a
+        # TTL (avoids the SET/EXPIRE race that left stale payloads on partial
+        # failure).
+        client.set(
+            key,
+            json.dumps(payload, ensure_ascii=False, default=str),
+            ex=CHAT_CACHE_TTL_SECONDS,
+        )
         # Maintain a per-session index so invalidation can wipe every signature.
         idx = _index_key(project_root, session_id)
         client.sadd(idx, signature)

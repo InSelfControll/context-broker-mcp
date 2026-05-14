@@ -62,9 +62,20 @@ class FakeRedis:
     def get(self, key: str) -> str | None:
         return self.strings.get(key)
 
-    def set(self, key: str, value: str) -> bool:
+    def set(self, key: str, value: str, ex: int | None = None) -> bool:
         self.strings[key] = value
+        if ex is not None:
+            self.ttls[key] = int(ex)
         return True
+
+    def lindex(self, key: str, index: int) -> str | None:
+        data = self.lists.get(key, [])
+        if not data:
+            return None
+        try:
+            return data[index]
+        except IndexError:
+            return None
 
     def expire(self, key: str, seconds: int) -> bool:
         self.ttls[key] = seconds

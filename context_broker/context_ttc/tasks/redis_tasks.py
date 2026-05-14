@@ -255,20 +255,39 @@ def list_projects() -> list[dict[str, Any]]:
     return out
 
 
+def _last_message_timestamp(client: Any, key: str) -> float:
+    """Best-effort: return the `created_at` of the most recently appended message
+    in a session LIST. Returns 0.0 when the list is empty or the tail entry has
+    no timestamp."""
+    try:
+        tail = client.lindex(key, -1)
+    except Exception:
+        return 0.0
+    if not tail:
+        return 0.0
+    try:
+        return _coerce_float(json.loads(tail).get("created_at"))
+    except Exception:
+        return 0.0
+
+
 def list_sessions(digest: str) -> list[dict[str, Any]]:
-    """List sessions for a given project digest."""
+    """List sessions for a given project digest, most-recently-updated first."""
     client = _get_redis_client()
-    ids = sorted(client.smembers(_k("project", digest, "sessions")) or [])
+    ids = client.smembers(_k("project", digest, "sessions")) or []
     out: list[dict[str, Any]] = []
     for session_id in ids:
-        message_count = client.llen(_session_key(digest, session_id)) or 0
+        key = _session_key(digest, session_id)
+        message_count = client.llen(key) or 0
         out.append(
             {
                 "session_id": session_id,
                 "full_session_id": f"{HONCHO_SESSION_PREFIX}-{session_id}",
                 "message_count": int(message_count),
+                "last_message_at": _last_message_timestamp(client, key),
             }
         )
+    out.sort(key=lambda s: (s["last_message_at"], s["session_id"]), reverse=True)
     return out
 
 
@@ -298,9 +317,9 @@ def _coerce_float(value: Any) -> float:
 
 
 def list_users(digest: str) -> list[dict[str, Any]]:
-    """Return per-user activity summaries for one project."""
+    """Return per-user activity summaries for one project, most-recently-active first."""
     client = _get_redis_client()
-    peer_ids = sorted(client.smembers(_k("project", digest, "users")) or [])
+    peer_ids = client.smembers(_k("project", digest, "users")) or []
     out: list[dict[str, Any]] = []
     for peer_id in peer_ids:
         meta = client.hgetall(_user_key(digest, peer_id)) or {}
@@ -318,6 +337,7 @@ def list_users(digest: str) -> list[dict[str, Any]]:
                 "request_log_length": int(request_log_len),
             }
         )
+    out.sort(key=lambda u: (u["last_seen"], u["peer_id"]), reverse=True)
     return out
 
 
