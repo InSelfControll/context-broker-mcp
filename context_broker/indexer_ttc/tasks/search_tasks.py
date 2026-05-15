@@ -17,6 +17,7 @@ from context_broker.indexer_ttc.tasks.snippet_tasks import (
 from context_broker.indexer_ttc.tools import state
 from context_broker.indexer_ttc.tools.cache_tools import (
     generate_cache_key,
+    generate_index_fingerprint,
     get_file_mtimes,
     is_cache_valid,
     load_query_cache,
@@ -100,6 +101,7 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
         "top_k": top_k,
         "result_paths": result_paths,
         "file_mtimes": get_file_mtimes(result_paths),
+        "index_fingerprint": generate_index_fingerprint(current_mtimes),
     }
     state.QUERY_CACHE[project_root] = cache
     save_query_cache(project_root)

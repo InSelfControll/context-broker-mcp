@@ -67,14 +67,23 @@ Example with Ollama:
 
 ## Features
 
-- 🔍 **Semantic Code Search** - Find code by describing what you need in plain English
-- 🎯 **Auto Project Detection** - Automatically detects project roots from common markers
-- 💾 **Smart Caching** - Caches embeddings and results with file modification tracking
-- 📊 **Token Efficiency** - Reports token usage and savings for each query
-- 🚫 **Respects Ignore Files** - Reads `.gitignore` and `.dockerignore` to exclude unwanted files
-- 💾 **Persistent Search Results** - Save and load search results across sessions
-- ⚡ **Fast Inference** - Uses CPU-optimized sentence transformers for quick searches
-- 🏗️ **Modular Architecture** - Clean, extensible codebase following best practices
+- 🔍 **Semantic Code Search** — Find code by describing what you need in plain English
+- 🎯 **Auto Project Detection** — Automatically detects project roots from common markers
+- 💾 **Smart Caching** — Caches embeddings and results with file modification tracking
+- 📊 **Token Efficiency** — Reports token usage and savings for each query
+- 🚫 **Respects Ignore Files** — Reads `.gitignore` and `.dockerignore` to exclude unwanted files
+- 💾 **Persistent Search Results** — Save and load search results across sessions
+- ⚡ **Fast Inference** — CPU-optimized sentence transformers for quick searches
+- 🗄️ **Cross-Chat Context Backend** — Honcho or Redis (via `CONTEXT_BROKER_CONTEXT_BACKEND`)
+- 📝 **Chat History Persistence** — Dual-written to context backend + local JSON ledger
+- 🔐 **Chat-Payload Cache** — Redis TTL-based read-through cache with auto-warm on save
+- 👤 **User Activity Tracking** — Per-user `first_seen` / `last_seen` / `request_count` + audit log
+- 🌐 **Web Dashboard** — Starlette app to browse projects → sessions → messages
+- 🔄 **Session Management** — `record_turn`, `record_session`, `load_cross_session_context` MCP tools
+- 📜 **Auto CHANGELOG** — Generated from conventional commits
+- 📄 **Auto AGENTS.md** — Generated and validated per project
+- 📖 **Auto Feature Docs** — Documentation generated from feature changes
+- 🏗️ **Modular Architecture** — TTC (Tool-Task-Codebase) folder isolation pattern
 
 ## Quick Start
 
@@ -262,11 +271,31 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 |------|-------------|
 | `search_codebase(query, project_root?)` | Search codebase using semantic similarity |
 | `auto_search(project_root?)` | Auto-search for entry points and configuration |
-| `token_counter(project_root?)` | Get latest token usage for editor integrations |
 | `save_search_results(query, filename, subdir?)` | Save search results to JSON |
 | `list_saved_results(project_name, subdir?)` | List saved JSON files |
 | `load_saved_results(project_name, filename, subdir?)` | Load saved search results |
 | `get_storage_config()` | Show storage configuration |
+| `token_counter(project_root?)` | Get latest token usage for editor integrations |
+| `token_history(project_root?, limit?)` | Graph-ready token savings history |
+| `token_integration_manifest(project_root?)` | Integration options for GraphQL, LangGraph, etc. |
+| `save_chat_context(session_id, user_message, assistant_message, ...)` | Save chat messages to the context backend (Honcho or Redis) |
+| `load_chat_context(session_id, tokens?, summary?, search_query?, ...)` | Load cross-chat context from the configured backend |
+| `record_turn(session_id, user_message, assistant_message, ...)` | Save one user-assistant exchange |
+| `record_session(session_id, turns, ...)` | Bulk-persist an entire conversation |
+| `context_backend_status()` | Show configured cross-chat context backend status |
+| `load_cross_session_context(search_query?, top_k?, ...)` | Search across all sessions (Redis only) |
+| `list_user_activity(peer_id?, limit?)` | Per-user activity audit (Redis only) |
+| `ensure_agents_md_tool(project_root?)` | Ensure AGENTS.md exists for a project |
+| `validate_agents_md_tool(project_root?)` | Validate AGENTS.md quality |
+| `generate_agents_md_tool(project_root?, force?)` | Generate AGENTS.md for a project |
+| `scan_projects_for_agents_md(project_root?, max_depth?)` | Scan for projects missing AGENTS.md |
+| `ensure_changelog_tool(project_root?)` | Ensure CHANGELOG.md exists and is up to date |
+| `validate_changelog_tool(project_root?)` | Validate CHANGELOG.md against git history |
+| `generate_version_changelog(version, project_root?, since?)` | Generate a changelog section for a version |
+| `get_changelog_stats_tool(project_root?)` | Get statistics about CHANGELOG.md |
+| `ensure_feature_docs_tool(project_root?, since?)` | Ensure docs exist for recent feature changes |
+| `scan_missing_docs_tool(project_root?, since?)` | Scan for feature changes missing documentation |
+| `get_docs_stats_tool(project_root?)` | Get statistics about feature documentation |
 
 ### Available Resources
 
@@ -309,11 +338,14 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
-| `CONTEXT_BROKER_CACHE_BACKEND` | Query-cache backend: `local` or `redis` | `local` |
-| `CONTEXT_BROKER_REDIS_URL` | Redis URL when Redis cache is enabled | *(empty)* |
-| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for query-cache entries | `context-broker` |
-| `CONTEXT_BROKER_REDIS_TTL_SECONDS` | Redis query-cache TTL in seconds (`0` disables) | `0` |
-| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none` or `honcho` | `none` |
+| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none`, `honcho`, or `redis` | `none` |
+| `CONTEXT_BROKER_REDIS_URL` | Redis URL when `CONTEXT_BACKEND=redis` | *(empty)* |
+| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for the context backend | `context-broker` |
+| `CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS` | TTL for the Redis chat-payload cache (`0` disables) | `300` |
+| `CONTEXT_BROKER_USE_ACCOUNT_NAME` | Use the OS account name as the default user peer id | `0` |
+| `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` | Explicit override for the resolved user peer id | *(empty)* |
+| `CONTEXT_BROKER_DASHBOARD_HOST` | Bind host for the web-only dashboard | `127.0.0.1` |
+| `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web-only dashboard | `8770` |
 | `CONTEXT_BROKER_HONCHO_WORKSPACE_ID` | Honcho workspace id | `context-broker` |
 | `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Prefix for Honcho session ids | `context-broker` |
 | `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
@@ -322,18 +354,27 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
 
-### Optional Cache and Context Backends
+### Persistence Model
 
-The default remains fully local: query results are cached under `.cache/context-broker.json`, and saved results/token history stay in `.context-broker/` or `~/.context-broker/`.
+- **Query cache** → local JSON at `.cache/context-broker.json`.
+- **Saved results / user memory** → local JSON under `.context-broker/` or `~/.context-broker/`.
+- **Token history** → local JSON under the same storage directories.
+- **Cross-chat context** → optional Honcho **or** Redis backend (see below).
+- **Chat history** → dual-written. Every save lands in the chosen context backend (Honcho/Redis) **and** in a local-JSON ledger at `<storage>/chats/<project_digest>/<session_id>.json`. Saves *append*; prior turns are never overwritten. Use `record_turn` for an explicit "save the exchange I just had" tool and `load_cross_session_context` for cross-session retrieval.
 
-To use Redis for the derived query cache:
+### Web Dashboard
+
+Browse stored cross-chats per project without running the MCP server:
 
 ```bash
-CONTEXT_BROKER_CACHE_BACKEND=redis
-CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
+CONTEXT_BROKER_CONTEXT_BACKEND=redis \
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0 \
+python -m context_broker dashboard
 ```
 
-Redis stores only query-cache metadata such as result paths and mtimes. Saved results and token history still use the configured storage mode.
+Binds `127.0.0.1:8770` by default (override with `CONTEXT_BROKER_DASHBOARD_HOST` / `CONTEXT_BROKER_DASHBOARD_PORT`). Install the optional extras with `pip install "context-broker[dashboard]"`. The dashboard requires the Redis context backend to enumerate projects.
+
+`.env` files are picked up automatically (nearest file walking up from CWD) — both the MCP server and the dashboard load them, without overriding env already set by the parent process. Re-running the dashboard when one is already serving on the configured host/port is a no-op: the second process probes `/api/status`, recognises the existing instance, and exits cleanly. Safe to wire as an auto-launch step in every editor's MCP config.
 
 To use Honcho for context between chats:
 
@@ -343,6 +384,15 @@ CONTEXT_BROKER_HONCHO_WORKSPACE_ID=context-broker
 ```
 
 Install optional integrations with `pip install "context-broker[integrations]"` or the equivalent UV command. The Honcho tools are explicit: call `save_chat_context` to store messages and `load_chat_context` to retrieve session context. Honcho context is session-limited by default to avoid mixing unrelated project or user memory.
+
+Switch to the Redis-backed equivalent with:
+
+```bash
+CONTEXT_BROKER_CONTEXT_BACKEND=redis
+CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
+```
+
+The same `save_chat_context` / `load_chat_context` MCP tools then write to Redis instead of Honcho. The Redis backend is what the web dashboard reads from.
 
 ### Storage Modes
 
@@ -444,21 +494,48 @@ sequenceDiagram
 
 ```
 context-broker/
-├── context_broker/           # Modular package
-│   ├── __init__.py          # Package init
-│   ├── config.py            # Configuration constants
-│   ├── utils.py             # Logging & utilities
-│   ├── project.py           # Project detection
-│   ├── storage.py           # JSON persistence
-│   ├── indexer.py           # Search & embeddings
-│   └── server.py            # MCP implementation
-├── context-broker.py        # Main entry point
-├── main.py                  # Alternative entry
-├── pyproject.toml           # Project config
-├── README.md                # This file
-├── Usage.md                 # Detailed usage guide
-├── ARCHITECTURE.md          # Architecture docs
-└── CONTRIBUTING.md          # Contribution guide
+├── context_broker/              # Modular package
+│   ├── __init__.py
+│   ├── __main__.py              # Entry: MCP server or dashboard
+│   ├── config.py                # Configuration constants
+│   ├── env_loader.py            # .env auto-loader
+│   ├── identity.py              # User identity resolver
+│   ├── utils.py                 # Logging & utilities
+│   ├── project.py               # Project detection
+│   ├── storage.py               # JSON persistence
+│   ├── indexer.py               # Search & embeddings
+│   ├── server.py                # MCP server
+│   ├── dashboard.py             # Dashboard shim
+│   ├── context_ttc/             # Cross-chat context
+│   │   └── tasks/
+│   │       ├── honcho_tasks.py  # Honcho backend
+│   │       ├── redis_tasks.py   # Redis backend
+│   │       ├── chat_cache.py    # Redis chat-payload cache
+│   │       └── chat_ledger.py   # Local JSON ledger mirror
+│   ├── dashboard_ttc/           # Web dashboard
+│   │   ├── codebase/api.py      # Dashboard runtime
+│   │   ├── tasks/data_tasks.py  # Data retrieval
+│   │   └── tools/
+│   │       ├── web_app.py       # Starlette app + routes
+│   │       └── templates.py     # Jinja2 templates
+│   ├── indexer_ttc/             # Search & indexing
+│   │   └── tasks/
+│   │       └── search_tasks.py
+│   └── server_ttc/              # MCP tool registrations
+│       ├── codebase/assembly.py
+│       └── tasks/
+│           ├── context_tasks.py # Cross-chat context tools
+│           ├── search_tasks.py  # Search tools
+│           ├── storage_tasks.py # Storage tools
+│           ├── docs_tasks.py    # Feature doc tools
+│           └── agents_tasks.py  # AGENTS.md tools
+├── pyproject.toml               # Project config
+├── README.md                    # This file
+├── Usage.md                     # Detailed usage guide
+├── ARCHITECTURE.md              # Architecture docs
+├── CHANGELOG.md                 # Release history
+├── AGENTS.md                    # Agent instructions
+└── CONTRIBUTING.md              # Contribution guide
 ```
 
 ## Supported File Types
@@ -494,14 +571,21 @@ Always excluded: `node_modules`, `.git`, `dist`, `__pycache__`, `.venv`, `target
 
 ## Module Overview
 
-| Module | Lines | Purpose |
-|--------|-------|---------|
-| `config.py` | ~200 | Environment variables, constants, configuration |
-| `utils.py` | ~100 | Logging, token counting, path utilities |
-| `project.py` | ~300 | Project root detection, ignore pattern parsing |
-| `storage.py` | ~250 | Multi-mode JSON persistence |
-| `indexer.py` | ~400 | File indexing, embeddings, search |
-| `server.py` | ~450 | MCP tools, resources, prompts |
+| Module | Purpose |
+|--------|---------|
+| `config.py` | Environment variables, constants, configuration |
+| `env_loader.py` | `.env` auto-loader (no override of parent env) |
+| `identity.py` | OS account name resolver for user peer id |
+| `utils.py` | Logging, token counting, path utilities |
+| `project.py` | Project root detection, ignore pattern parsing |
+| `storage.py` | Multi-mode JSON persistence |
+| `indexer.py` | File indexing, embeddings, search |
+| `server.py` | MCP server implementation |
+| `__main__.py` | Entry point: MCP server or web dashboard |
+| `context_ttc/` | Cross-chat context backends (Honcho, Redis), chat cache, chat ledger |
+| `dashboard_ttc/` | Starlette web dashboard, Jinja2 templates, data retrieval |
+| `indexer_ttc/` | Search & indexing tasks |
+| `server_ttc/` | MCP tool registrations (context, search, storage, docs, agents) |
 
 ## Performance
 
@@ -523,7 +607,7 @@ Production API server with real-time search and secure authentication.
 ## Overview
 - Version: 1.0.0
 - License: MIT
-- Stack: Python 3.13, FastAPI, sentence-transformers, Redis
+- Stack: Python 3.13, FastMCP, sentence-transformers, local JSON persistence
 
 ## Entry Points
 - `context_broker/server.py` — MCP server entry
