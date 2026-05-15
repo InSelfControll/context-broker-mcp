@@ -73,3 +73,6 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 .a5c/
+
+# LinkedIn posts (keep local only)
+linkedin/

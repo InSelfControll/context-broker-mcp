@@ -11,7 +11,7 @@ A Model Context Protocol (MCP) server that provides semantic search capabilities
 - **Name**: context-broker
 - **Version**: 0.2.0
 - **License**: MIT
-- **Stack**: Python 3.13, FastMCP, sentence-transformers, PyTorch, Redis (optional)
+- **Stack**: Python 3.13, FastMCP, sentence-transformers, PyTorch, local JSON persistence, optional Redis cross-chat backend + Starlette web dashboard
 
 ## Entry Points
 
@@ -27,8 +27,14 @@ A Model Context Protocol (MCP) server that provides semantic search capabilities
 - **ML Runtime**: PyTorch (CPU by default, GPU/MPS via `CONTEXT_BROKER_DEVICE`)
 - **Token Counting**: tiktoken (`cl100k_base`)
 - **Search**: scikit-learn cosine similarity
-- **Cache**: Local JSON (default) or Redis (optional via `CONTEXT_BROKER_CACHE_BACKEND`)
-- **Cross-Chat Context**: Honcho (optional via `CONTEXT_BROKER_CONTEXT_BACKEND`)
+- **Cache**: Local JSON only (`.cache/context-broker.json`)
+- **User Memory / Saved Results**: Local JSON under `.context-broker/` or `~/.context-broker/`
+- **Token History**: Local JSON under the same storage directories
+- **Cross-Chat Context**: Honcho **or** Redis (optional, via `CONTEXT_BROKER_CONTEXT_BACKEND=honcho|redis`). Redis is wired as a Honcho-equivalent cross-session store.
+- **Chat History**: Append-only. Every save is mirrored to a local-JSON chat ledger at `<storage>/chats/<digest>/<session>.json` via `context_broker/context_ttc/tasks/chat_ledger.py`. Saves *invalidate then warm* the default-params chat-cache entry by default (`CONTEXT_BROKER_AUTO_WARM_CACHE_ON_SAVE=1`), so the next default load is an immediate cached hit. Four MCP helpers: `record_turn` (one exchange), `record_session` (an entire conversation), `load_cross_session_context` (Redis-only; query-match ranking across sessions), and `list_user_activity` (Redis-only; per-user first_seen/last_seen/request_count plus a full per-request audit log of `{timestamp, session_id}`). Activity is also browsable at `/projects/{digest}/users` in the dashboard.
+- **Chat-Payload Cache**: Redis (when `REDIS_URL` is set) caches full `load_chat_context` responses with TTL `CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS` (default 300). Works for both Honcho and Redis backends; invalidated on `save_chat_context`.
+- **User Identity**: Opt-in via `CONTEXT_BROKER_USE_ACCOUNT_NAME=1` — the user peer id defaults to the OS account name (`getpass.getuser()`), or to `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` when set. Explicit `user_peer_id` args from MCP callers always win. Assistant peer id is unaffected.
+- **Dashboard**: Web-only Starlette app under `context_broker/dashboard_ttc/` for browsing cross-chats per project (reads the Redis backend). Launch via `python -m context_broker dashboard` or `context-broker-dashboard`. Auto-loads `.env` (without overriding parent env) and refuses to start a duplicate when one is already serving on the configured host/port — safe for multiple editors to point at the same instance.
 
 ## Dependencies
 
@@ -39,8 +45,9 @@ A Model Context Protocol (MCP) server that provides semantic search capabilities
 - numpy — numerical operations
 - tiktoken — token counting for efficiency reports
 - rich — terminal output formatting
-- redis — optional query cache backend
-- honcho — optional cross-chat context backend
+- honcho-ai — optional cross-chat context backend
+- redis — optional Redis-backed cross-chat context backend (Honcho-equivalent)
+- starlette / uvicorn / jinja2 — optional web dashboard (`[dashboard]` extra)
 
 ## Architecture
 
