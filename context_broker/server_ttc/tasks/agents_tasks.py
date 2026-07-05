@@ -41,10 +41,10 @@ def register_agents_tools(mcp: FastMCP) -> None:
                 path = result["path"]
 
                 if status == "exists":
-                    await progress(ctx, f"✅ AGENTS.md already exists")
+                    await progress(ctx, "✅ AGENTS.md already exists")
                     return f"📄 AGENTS.md already exists at: {path}\n\nNo changes were made."
 
-                await progress(ctx, f"✅ Created AGENTS.md")
+                await progress(ctx, "✅ Created AGENTS.md")
                 return (
                     f"📝 Created AGENTS.md\n"
                     f"📁 Path: {path}\n"
@@ -81,7 +81,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
                 score = result.get("score", 0)
 
                 lines = [
-                    f"📋 AGENTS.md Validation Report",
+                    "📋 AGENTS.md Validation Report",
                     f"📁 Path: {path}",
                     f"📊 Status: {status.upper()}",
                     f"⭐ Score: {score}/100",
@@ -207,7 +207,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
         with tracked_activity():
             root_display = project_root if project_root else "[auto-detected]"
             log(f"🔍 scan_projects_for_agents_md called: project_root='{root_display}', max_depth={max_depth}")
-            await progress(ctx, f"🔍 Scanning for projects missing AGENTS.md...")
+            await progress(ctx, "🔍 Scanning for projects missing AGENTS.md...")
 
             root = resolve_project_root(project_root)
             try:
@@ -218,7 +218,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
                 await progress(ctx, f"📊 Found {len(results)} projects, {len(missing)} missing AGENTS.md")
 
                 lines = [
-                    f"🔍 AGENTS.md Scan Results",
+                    "🔍 AGENTS.md Scan Results",
                     f"📁 Scanned from: {root}",
                     f"📊 Projects found: {len(results)}",
                     f"✅ With AGENTS.md: {ok_count}",

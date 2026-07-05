@@ -46,7 +46,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
                     return "📄 No commits found to document.\n\nMake some commits first."
 
                 lines = [
-                    f"📝 Feature Documentation Report",
+                    "📝 Feature Documentation Report",
                     f"📁 Project: {root.name}",
                     f"📊 Created: {created} docs",
                     f"📊 Already exist: {existing} docs",
@@ -104,7 +104,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
                 missing_count = result.get("missing_count", 0)
 
                 lines = [
-                    f"🔍 Missing Documentation Report",
+                    "🔍 Missing Documentation Report",
                     f"📁 Project: {root.name}",
                 ]
 
@@ -168,7 +168,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
 
                 features = result.get("features_list", [])
                 lines = [
-                    f"📚 Documentation Statistics",
+                    "📚 Documentation Statistics",
                     f"📁 Project: {root.name}",
                     f"📊 Features documented: {result.get('features', 0)}",
                     f"📄 Total docs: {result.get('total_docs', 0)}",
