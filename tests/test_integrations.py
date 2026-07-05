@@ -543,7 +543,6 @@ not-a-valid-line
 
 def test_dashboard_guard_recognises_running_instance(monkeypatch_fixtures=None) -> None:
     """Probe returns our status banner → guard says "already running"."""
-    import io
     import context_broker.__main__ as cli
 
     class _Resp:

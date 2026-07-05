@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from context_broker.config import SECRET_ENV_KEY_PATTERNS, SECRET_FILE_PATTERNS
 from context_broker.indexer_ttc.tools.io_tools import read_file_content

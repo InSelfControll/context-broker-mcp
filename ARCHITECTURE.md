@@ -369,6 +369,52 @@ flowchart TD
 
 ## Extension Points
 
+### Downstream MCP Client Subsystem
+
+Phase 1 of the Universal Context Router migration adds a client-side MCP layer
+without changing the existing FastMCP server surface. The subsystem follows the
+same TTC pattern as the rest of the project:
+
+- `context_broker/client_ttc/tools/contract_tools.py` defines transport config,
+  connection state, discovered tool/prompt/resource descriptors, capability
+  payloads, and downstream call results.
+- `context_broker/client_ttc/tools/transport_tools.py` adapts stdio,
+  streamable HTTP, and SSE transports from the MCP SDK. Stdio subprocesses get a
+  filtered environment so parent-process secrets are not inherited unless
+  explicitly configured.
+- `context_broker/client_ttc/tasks/connection_tasks.py` owns connection
+  lifecycle, reconnect, heartbeat, capability discovery, parallel manager
+  operations, and downstream `tools/call` dispatch.
+- `context_broker/client_ttc/codebase/api.py` exports stable contracts for the
+  future registry and execution engine.
+
+```mermaid
+sequenceDiagram
+    participant Router as context-broker router
+    participant Manager as DownstreamConnectionManager
+    participant Session as MCP ClientSession
+    participant Server as Downstream MCP Server
+
+    Router->>Manager: register(config)
+    Router->>Manager: discover_all()
+    Manager->>Session: open transport + initialize
+    Session->>Server: tools/list
+    Session->>Server: prompts/list
+    Session->>Server: resources/list
+    Server-->>Session: capabilities
+    Session-->>Manager: typed descriptors
+    Manager-->>Router: DownstreamCapabilities
+    Router->>Manager: call_tool(server, tool, args)
+    Manager->>Session: tools/call
+    Session->>Server: execute tool
+    Server-->>Session: result
+    Session-->>Manager: DownstreamCallResult
+```
+
+The current router still uses built-in descriptors. Later phases can ingest
+`DownstreamCapabilities` into the registry and execute DAG nodes through the
+manager after safety approval.
+
 ### Adding New File Types
 ```python
 # In context_broker/config.py

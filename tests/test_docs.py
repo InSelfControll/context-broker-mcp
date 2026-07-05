@@ -2,12 +2,10 @@
 
 from pathlib import Path
 
-import pytest
 
 from context_broker.docs_ttc.tools.docs_tools import (
     _determine_doc_filename,
     _generate_doc_content,
-    _get_changed_files,
     _has_existing_feature_docs,
     _infer_feature_from_files,
     _infer_feature_from_scope,

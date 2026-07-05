@@ -80,9 +80,11 @@ Example with Ollama:
 - 👤 **User Activity Tracking** — Per-user `first_seen` / `last_seen` / `request_count` + audit log
 - 🌐 **Web Dashboard** — Starlette app to browse projects → sessions → messages
 - 🔄 **Session Management** — `record_turn`, `record_session`, `load_cross_session_context` MCP tools
+- 🔌 **Downstream MCP Client Foundation** — stdio, streamable HTTP, and SSE connection manager for Universal Context Router integrations
 - 📜 **Auto CHANGELOG** — Generated from conventional commits
 - 📄 **Auto AGENTS.md** — Generated and validated per project
 - 📖 **Auto Feature Docs** — Documentation generated from feature changes
+- 🧭 **Token-Slim MCP Router** — Client-agnostic task router that exposes only relevant tools, builds a simple DAG, and blocks unsafe execution
 - 🏗️ **Modular Architecture** — TTC (Tool-Task-Codebase) folder isolation pattern
 
 ## Quick Start
@@ -278,6 +280,13 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 | `token_counter(project_root?)` | Get latest token usage for editor integrations |
 | `token_history(project_root?, limit?)` | Graph-ready token savings history |
 | `token_integration_manifest(project_root?)` | Integration options for GraphQL, LangGraph, etc. |
+| `route_task(task, mode?, token_budget?, top_k?)` | Recommend a minimal task-specific tool slice; modes: `plan_only`, `recommend_tools`, `execute_safe` |
+| `execute_plan(plan_json, arguments_by_tool_json?, confirmed?)` | Execute or delegate a routed UCR plan through safety gates |
+| `search_context(query, project_root?, top_k?)` | Search relevant project context through the UCR public surface |
+| `explain_plan(plan_json)` | Explain a UCR plan in client-neutral JSON |
+| `execute_selected_tool(tool_id, arguments_json?, confirmed?)` | Safety-gated execution/delegation for a selected router tool |
+| `get_route_metrics()` | Return UCR route/execution/cache/latency metrics |
+| `benchmark_router(iterations?)` | Run a lightweight in-process router benchmark |
 | `save_chat_context(session_id, user_message, assistant_message, ...)` | Save chat messages to the context backend (Honcho or Redis) |
 | `load_chat_context(session_id, tokens?, summary?, search_query?, ...)` | Load cross-chat context from the configured backend |
 | `record_turn(session_id, user_message, assistant_message, ...)` | Save one user-assistant exchange |
@@ -307,6 +316,48 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 Token counter reports are also persisted as internal JSON under broker storage
 (in-project path: `.context-broker/_internal/token-counter-latest.json`), and
 that storage is excluded from semantic indexing so it is not forwarded as code context.
+
+### Token-Slim Router
+
+`route_task` is a production-oriented MCP router API for Claude Code, Codex CLI,
+Cursor, Hermes Agent, and other MCP clients. Instead of exposing every server tool
+by default, the router ranks a registry of tool descriptors against the current
+task, applies a token budget, and returns only the tools that should be visible.
+
+Router modes:
+
+- `recommend_tools` — return ranked tool descriptors and token-savings metrics.
+- `plan_only` — also return a dependency-ordered DAG without executing anything.
+- `execute_safe` — prepare a safety-gated execution path; unknown tools are
+  delegated back to the client runtime instead of executed blindly.
+
+The router registry stores descriptor vectors in `.cache/token-slim-router-tools.json`.
+Safety checks block prompt-injection text, path traversal, secret-like arguments,
+secret filenames, and dangerous shell commands. High-risk and shell-capable tools
+require explicit confirmation.
+
+### Universal Context Router Migration
+
+Context Broker is being migrated incrementally into a Universal Context Router:
+an upstream MCP server and a downstream MCP client. The downstream client
+subsystem is isolated under `context_broker/client_ttc/` and supports stdio,
+streamable HTTP, and SSE MCP transports, bounded reconnect, heartbeat probes,
+capability discovery (`tools/list`, `prompts/list`, `resources/list`), and
+downstream `tools/call` dispatch.
+
+The UCR runtime adds an expanded tool registry with JSON, SQLite, and optional
+Redis cache; downstream capability ingestion; intent detection; skill-aware
+decomposition; DAG planning with parallel-safe stages; safety-gated plan
+execution; secret redaction; route metrics; and a benchmark tool. Existing
+server tools remain backward compatible by default. To expose only the minimal
+public UCR surface, start the server with:
+
+```bash
+CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY=1
+```
+
+See [ARCHITECTURE_MIGRATION.md](ARCHITECTURE_MIGRATION.md) for completed work,
+remaining phases, decisions, risks, rollback strategy, and future improvements.
 
 ### Example Queries
 
@@ -350,6 +401,7 @@ that storage is excluded from semantic indexing so it is not forwarded as code c
 | `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Prefix for Honcho session ids | `context-broker` |
 | `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
 | `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session by default | `1` |
+| `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
@@ -562,6 +614,11 @@ Always excluded: `node_modules`, `.git`, `dist`, `__pycache__`, `.venv`, `target
   - Data flow
   - Module dependencies
   - Performance characteristics
+
+- [Universal Context Router RFCs](docs/rfc/README.md) - Vendor-neutral RFC series for context, tool, memory, and execution routing:
+  - RFC-000 through RFC-018
+  - MCP-first architecture and public APIs
+  - Security, adapters, plugins, storage, observability, benchmarks, testing, deployment, and roadmap
   
 - [Contributing](CONTRIBUTING.md) - Developer guide:
   - Development setup

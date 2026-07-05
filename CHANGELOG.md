@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] — 2026-07-05
+
+### Added
+
+- ✨ Downstream MCP client subsystem for Universal Context Router Phase 1: stdio, streamable HTTP, and SSE transports; connection manager; reconnect; heartbeat; capability discovery; and downstream tool calls.
+- ✨ Universal Context Router runtime foundations for Phases 2-7: expanded tool registry metadata, SQLite/optional Redis registry cache, downstream descriptor ingestion, intent/decomposition routing, DAG stages, opt-in minimal public surface, safety-gated `execute_plan`, secret redaction, route metrics, and router benchmark tool.
+- ✨ Redis cross-chat context backend, web dashboard, chat ledger, and user activity tracking — `40848bd`
+
+### Fixed
+
+- 🐛 dashboard message timestamps, recency sort, no-store cache, atomic SET ex — `fb181fb`
+
+### Documentation
+
+- 📝 Add `ARCHITECTURE_MIGRATION.md` and update README/architecture docs with Universal Context Router migration status.
+- 📝 Add Universal Context Router RFC series covering vision, architecture, registry, routing, decomposition, planning, compression, exposure, execution, adapters, security, plugins, storage, observability, benchmarks, APIs, testing, deployment, and roadmap.
+- 📝 add AGENTS.md with MCP config, cursor rules, and project structure — `d75d588`
+- 📝 fix CHANGELOG versioning, add AGENTS.md config example with cursor rules — `7179a6c`
+
+### Chore
+
+- 🔧 update uv.lock after pyproject.toml changes — `4a9f702`
+- 🔧 bump urllib3 from 2.6.3 to 2.7.0 (#17) ([#17](https://github.com/yourusername/context-broker-mcp/pull/17)) — `c9d13b5`
+- 🔧 bump authlib from 1.6.9 to 1.6.12 (#18) ([#18](https://github.com/yourusername/context-broker-mcp/pull/18)) — `2bde8fb`
+
+### Uncategorized
+
+- 📝 Merge pull request #19 from InSelfControll/cursor/token-savings-history ([#19](https://github.com/yourusername/context-broker-mcp/pull/19)) — `5598638`
+- 📝 Create AGENTS.md for project agent instructions — `45bf942`
+- 📝 Merge pull request #15 from InSelfControll/cursor/token-savings-history ([#15](https://github.com/yourusername/context-broker-mcp/pull/15)) — `27d5f32`
+- 📝 Merge pull request #14 from InSelfControll/cursor/token-savings-history ([#14](https://github.com/yourusername/context-broker-mcp/pull/14)) — `8278305`
+
 ## [0.3.0] — 2026-05-14
 
 ### Added
