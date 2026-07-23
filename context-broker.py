@@ -28,7 +28,7 @@ Environment Variables:
     CONTEXT_BROKER_STORAGE_DIR - Base directory for global storage
     CONTEXT_BROKER_DEFAULT_QUERY - Default query for auto-context
     CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS - Enable per-call MCP progress updates
-    CONTEXT_BROKER_LOCAL_ONLY - Force local-only embedding model loading (no network)
+    CONTEXT_BROKER_LOCAL_ONLY - Prefer cached models; bootstrap-download missing models
     CONTEXT_BROKER_TRANSPORT - Transport: stdio, sse, streamable-http, or ws
     CONTEXT_BROKER_HOST - Host for network transports (default: 0.0.0.0)
     CONTEXT_BROKER_PORT - Port for network transports (default: 8765)

@@ -14,7 +14,10 @@ Context Broker uses **one local ML model** — an embedding model, not a chat/LL
 **Key points:**
 - The embedding model runs **locally on CPU** by default (set `CONTEXT_BROKER_DEVICE=cuda` or `mps` for GPU)
 - **No LLM or chat model is used** — Context Broker is a search/indexing tool, not a generative AI
-- Local-only mode (`CONTEXT_BROKER_LOCAL_ONLY=1`) forces offline model loading — no network calls
+- Embedding models download automatically on first use and are cached by Sentence Transformers
+- Local-only mode (`CONTEXT_BROKER_LOCAL_ONLY=1`) tries the cache first, then performs one
+  announced bootstrap download if the configured model is missing
+- Explicit `HF_HUB_OFFLINE=1` or `TRANSFORMERS_OFFLINE=1` settings disable automatic downloads
 - The model is lazy-loaded and auto-unloaded after 15 minutes of inactivity
 
 ### Using a Different Embedding Model
@@ -32,10 +35,9 @@ Set via environment variable:
 CONTEXT_BROKER_EMBEDDING_MODEL=all-mpnet-base-v2
 ```
 
-> When `CONTEXT_BROKER_LOCAL_ONLY=1` (default), the model must be pre-downloaded. Download with:
-> ```bash
-> python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-mpnet-base-v2')"
-> ```
+On first use, Context Broker names the configured model in its MCP log and downloads it
+automatically when it is not already cached. This bootstrap also applies when
+`CONTEXT_BROKER_LOCAL_ONLY=1`; subsequent loads use the local cache.
 
 ### Optional LLM Configuration
 
@@ -380,7 +382,7 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` |
 | `CONTEXT_BROKER_EMBEDDING_MODEL` | Sentence-transformers model for embeddings | `all-MiniLM-L6-v2` |
 | `CONTEXT_BROKER_DEVICE` | Torch device for the embedding model (`cpu`, `cuda`, `mps`) | `cpu` |
-| `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading to local cache only (no network) | `1` (enabled) |
+| `CONTEXT_BROKER_LOCAL_ONLY` | Prefer cache-only loading, with one bootstrap download if missing | `0` (disabled) |
 | `CONTEXT_BROKER_LLM_MODEL` | Optional LLM model identifier (exposed to MCP clients) | *(empty)* |
 | `CONTEXT_BROKER_LLM_BASE_URL` | Optional LLM API endpoint URL (exposed to MCP clients) | *(empty)* |
 | `CONTEXT_BROKER_LLM_API_KEY` | Optional LLM API key (exposed to MCP clients) | *(empty)* |
