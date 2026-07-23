@@ -372,7 +372,7 @@ EMBEDDING_MODEL: str = os.environ.get(
 Configurable via CONTEXT_BROKER_EMBEDDING_MODEL. Any model compatible with
 the ``sentence-transformers`` library works — e.g. ``all-mpnet-base-v2``
 for higher quality, or ``paraphrase-MiniLM-L3-v2`` for faster searches.
-Must be pre-downloaded when CONTEXT_BROKER_LOCAL_ONLY is enabled.
+Missing models are downloaded automatically on first use.
 """
 
 ENCODING_MODEL: str = "cl100k_base"
