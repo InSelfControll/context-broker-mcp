@@ -38,18 +38,13 @@ TOTAL_CORES = os.cpu_count() or 1
 """Number of CPU cores available for parallel processing."""
 WORKER_CORES = max(1, TOTAL_CORES // 2)
 """Number of CPU cores used for indexing/search (half of available cores)."""
-MODEL_LOCAL_ONLY: bool = os.environ.get("CONTEXT_BROKER_LOCAL_ONLY", "1").lower() in {
+MODEL_LOCAL_ONLY: bool = os.environ.get("CONTEXT_BROKER_LOCAL_ONLY", "0").lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-"""If enabled, embedding model loading is strictly local-only (no network fetch)."""
-
-if MODEL_LOCAL_ONLY:
-    # Force local/offline behavior for HuggingFace-backed model loading.
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+"""Prefer cache-only model loading, with one bootstrap download on a cache miss."""
 
 # Performance optimizations for PyTorch and NumPy
 os.environ["OMP_NUM_THREADS"] = str(WORKER_CORES)
@@ -536,4 +531,3 @@ DASHBOARD_HOST: str = os.environ.get("CONTEXT_BROKER_DASHBOARD_HOST", "127.0.0.1
 
 DASHBOARD_PORT: int = int(os.environ.get("CONTEXT_BROKER_DASHBOARD_PORT", "8770"))
 """Port for the web-only cross-chat dashboard."""
-
