@@ -32,7 +32,7 @@ def get_model() -> SentenceTransformer:
         if MODEL_LOCAL_ONLY:
             try:
                 state.SHARED_MODEL = _create_model(local_files_only=True)
-            except Exception:
+            except OSError:
                 log(
                     f"Embedding model '{EMBEDDING_MODEL}' is not available locally. "
                     "Downloading it automatically now; this is a one-time download.",
