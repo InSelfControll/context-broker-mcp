@@ -8,15 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] — 2026-07-23
 
+### Fixed
+
+- 🐛 limit bootstrap to model cache misses — `13aa679`
+- 🐛 bootstrap missing embedding models — `4814a9f`
+
 ### Documentation
 
+- 📝 update changelog — `4493a54`
 - 📝 explain embedding model bootstrap — `daf2d21`
 - 📝 plan automatic model bootstrap — `c42c60f`
 - 📝 specify automatic model bootstrap — `3e960ac`
-
-### Fixed
-
-- 🐛 bootstrap missing embedding models — `4814a9f`
 
 ## [Unreleased] — 2026-07-05
 
