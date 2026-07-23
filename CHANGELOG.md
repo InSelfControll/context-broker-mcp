@@ -10,11 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- 🐛 allow MCP harnesses to disable automatic `.env` loading
 - 🐛 limit bootstrap to model cache misses — `13aa679`
 - 🐛 bootstrap missing embedding models — `4814a9f`
 
 ### Documentation
 
+- 📝 record model bootstrap refinement — `a5f6a00`
 - 📝 update changelog — `4493a54`
 - 📝 explain embedding model bootstrap — `daf2d21`
 - 📝 plan automatic model bootstrap — `c42c60f`
