@@ -121,6 +121,29 @@ def test_local_only_cache_miss_notifies_and_downloads_exact_model(
     )
 
 
+def test_local_only_non_cache_error_does_not_trigger_download(
+    monkeypatch: Any, capsys: Any
+) -> None:
+    """Only a genuine cache miss should be treated as a bootstrap condition."""
+    _disable_torch_thread_changes(monkeypatch)
+    calls: list[bool] = []
+
+    def fake_sentence_transformer(
+        _name: str, *, device: str, local_files_only: bool
+    ) -> object:
+        calls.append(local_files_only)
+        raise ValueError("invalid model configuration")
+
+    monkeypatch.setattr(model_tools, "MODEL_LOCAL_ONLY", True)
+    monkeypatch.setattr(model_tools, "SentenceTransformer", fake_sentence_transformer)
+
+    with pytest.raises(ValueError, match="invalid model configuration"):
+        model_tools.get_model()
+
+    assert calls == [True]
+    assert "Downloading it automatically" not in capsys.readouterr().err
+
+
 def test_local_only_download_failure_names_model_and_chains_cause(
     monkeypatch: Any,
 ) -> None:
