@@ -361,6 +361,42 @@ CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY=1
 See [ARCHITECTURE_MIGRATION.md](ARCHITECTURE_MIGRATION.md) for completed work,
 remaining phases, decisions, risks, rollback strategy, and future improvements.
 
+### Credential-Preserving Gateway Deployment
+
+Enable gateway mode when you want Context Broker to be the sole MCP entry point for a
+client session. In this mode the server exposes only `prepare_gateway_request`,
+`execute_gateway_plan`, and `get_gateway_status`; the legacy MCP tool surface is hidden.
+
+Use this client-neutral configuration as the `context-broker` server entry. Register only
+Context Broker with the client, then configure Context7, GitHub, filesystem, memory, and
+other MCPs as Context Broker downstream servers.
+
+```json
+{
+  "mcpServers": {
+    "context-broker": {
+      "command": "uv",
+      "args": ["run", "python", "/path/to/context-broker/context-broker.py"],
+      "env": {
+        "CONTEXT_BROKER_GATEWAY_MODE": "1",
+        "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200",
+        "CONTEXT_BROKER_AUTO_LOAD_ENV": "0"
+      }
+    }
+  }
+}
+```
+
+Your client or skill calls `prepare_gateway_request` before an external LLM handoff and
+forwards only the returned `ucr.external_handoff.v1` payload. Context Broker does not call
+an external LLM and never receives, persists, or uses provider credentials; the client or
+skill owns provider selection, credentials, and the provider call. Use
+`execute_gateway_plan` only for the policy-checked plan returned by the handoff, and use
+`get_gateway_status` to inspect the active limits and gateway metrics.
+
+Gateway enforcement applies only to requests that reach Context Broker. Directly registered
+downstream MCPs bypass this gateway, so they are unsupported for a gateway-mode client.
+
 ### Example Queries
 
 ```
@@ -405,6 +441,8 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
 | `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session by default | `1` |
 | `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
+| `CONTEXT_BROKER_GATEWAY_MODE` | Expose only the credential-preserving gateway tools | `0` |
+| `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` | Maximum token budget for an external handoff | `1200` |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
