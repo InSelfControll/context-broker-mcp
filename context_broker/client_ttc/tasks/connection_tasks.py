@@ -128,8 +128,8 @@ class ManagedDownstreamConnection:
         if self._session_cm is not None:
             try:
                 await self._session_cm.__aexit__(None, None, None)
-            except Exception as exc:  # pragma: no cover - defensive cleanup logging
-                log(f"⚠️ Downstream MCP close failed for {self.config.name}: {exc}", "WARN")
+            except Exception:  # pragma: no cover - defensive cleanup logging
+                log(f"⚠️ Downstream MCP close failed for {self.config.name}", "WARN")
         self._session_cm = None
         self._session = None
         if self.state != ConnectionState.FAILED:

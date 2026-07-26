@@ -89,6 +89,7 @@ before a one-time bootstrap download. Explicit `HF_HUB_OFFLINE=1` or
 | `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web dashboard | `8770` | Any free port |
 | `CONTEXT_BROKER_GATEWAY_MODE` | Expose only the credential-preserving gateway tools | `0` | `0`, `1`, `true`, `false` |
 | `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` | Maximum token budget for an external handoff | `1200` | Any positive integer |
+| `CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH` | JSON document for gateway-managed downstream MCP servers | *(empty)* | A JSON path, never a `.env` path |
 
 By default, Context Broker uses half of available CPU cores for indexing/search workloads.
 
@@ -203,8 +204,8 @@ Add to your Kimi CLI configuration:
 
 Gateway mode gives a client session one MCP entry point: Context Broker. It exposes only
 `prepare_gateway_request`, `execute_gateway_plan`, and `get_gateway_status`. Register only
-Context Broker with the client, then configure Context7, GitHub, filesystem, memory, and
-other MCPs as Context Broker downstream servers.
+Context Broker with the client. Direct downstream MCP registration bypasses the gateway and
+is unsupported for gateway-mode clients.
 
 Use the following client-neutral server configuration:
 
@@ -217,22 +218,68 @@ Use the following client-neutral server configuration:
       "env": {
         "CONTEXT_BROKER_GATEWAY_MODE": "1",
         "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200",
-        "CONTEXT_BROKER_AUTO_LOAD_ENV": "0"
+        "CONTEXT_BROKER_AUTO_LOAD_ENV": "0",
+        "CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH": "/path/to/gateway-downstreams.json"
       }
     }
   }
 }
 ```
 
+Create the referenced JSON document with the stable
+`ucr.gateway_downstreams.v1` schema:
+
+```json
+{
+  "version": "ucr.gateway_downstreams.v1",
+  "servers": [
+    {
+      "name": "context7",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
+    },
+    {
+      "name": "github",
+      "transport": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "${GITHUB_MCP_AUTHORIZATION}"
+      }
+    }
+  ]
+}
+```
+
+The server objects use the existing downstream fields: `name`, `transport`, `command`,
+`args`, `env`, `url`, `headers`, `timeout_seconds`, `heartbeat_interval_seconds`,
+`reconnect_attempts`, and `reconnect_backoff_seconds`. `stdio` requires `command`;
+`http` and `sse` require `url`.
+
+Every value in `env` or `headers` must be a `${VARIABLE_NAME}` reference to an environment
+variable already injected into the Context Broker process. Literal values and `.env`
+configuration paths are rejected. Resolved credentials stay only in managed connection
+memory; they are never persisted, logged, or returned. Do not put credentials in `command`,
+`args`, or `url`.
+
+The first gateway request lazily validates the document, connects to every configured
+server, discovers capabilities, and merges discovered tools with the built-in registry.
+That registry and its connection manager persist across requests and close during FastMCP
+shutdown. Invalid configuration fails before routing or execution. A server that cannot be
+reached is excluded from routing and appears as failed in the secret-free
+`get_gateway_status` counts; an approved execution can retry it using its configured
+reconnect policy.
+
 Before you invoke an external LLM, your client or skill calls `prepare_gateway_request` and
 forwards only the returned `ucr.external_handoff.v1` payload. Context Broker never calls an
 external LLM and never receives, persists, or uses provider credentials. Your client or
 skill keeps provider selection, credentials, and the provider call. If execution is needed,
 call `execute_gateway_plan` only with the policy-checked plan from the handoff; call
-`get_gateway_status` to inspect the active configuration and gateway metrics.
-
-Context Broker can enforce this boundary only for requests it receives. Direct downstream
-MCP registration bypasses the gateway and is unsupported for gateway-mode clients.
+`get_gateway_status` to inspect active limits, downstream names/states/counts, and gateway
+metrics.
 
 ---
 

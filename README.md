@@ -368,8 +368,8 @@ client session. In this mode the server exposes only `prepare_gateway_request`,
 `execute_gateway_plan`, and `get_gateway_status`; the legacy MCP tool surface is hidden.
 
 Use this client-neutral configuration as the `context-broker` server entry. Register only
-Context Broker with the client, then configure Context7, GitHub, filesystem, memory, and
-other MCPs as Context Broker downstream servers.
+Context Broker with the client. Direct downstream MCP registration bypasses the gateway and
+is unsupported for a gateway-mode client.
 
 ```json
 {
@@ -380,22 +380,62 @@ other MCPs as Context Broker downstream servers.
       "env": {
         "CONTEXT_BROKER_GATEWAY_MODE": "1",
         "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200",
-        "CONTEXT_BROKER_AUTO_LOAD_ENV": "0"
+        "CONTEXT_BROKER_AUTO_LOAD_ENV": "0",
+        "CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH": "/path/to/gateway-downstreams.json"
       }
     }
   }
 }
 ```
 
+The downstream path must point to a JSON document, never a `.env` file:
+
+```json
+{
+  "version": "ucr.gateway_downstreams.v1",
+  "servers": [
+    {
+      "name": "context7",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      }
+    },
+    {
+      "name": "github",
+      "transport": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "${GITHUB_MCP_AUTHORIZATION}"
+      }
+    }
+  ]
+}
+```
+
+Every `env` and `headers` value must be a `${VARIABLE_NAME}` reference. Inject the
+referenced variables into the Context Broker process with the client host or a secret
+manager. Literal values are rejected, and resolved values are kept only in memory: they are
+not logged, persisted in the tool registry, or returned in handoffs, execution results,
+errors, or status responses. Do not put credentials in `command`, `args`, or `url`.
+
+Configuration loading and capability discovery are lazy: the first gateway request loads
+the document, validates all servers, opens managed MCP sessions, and adds discovered tools
+to the gateway's registry alongside Context Broker's built-in descriptors. The same manager
+and registry are reused for later requests and are closed when the FastMCP server shuts down.
+An invalid document fails before routing or execution. An unreachable server is omitted from
+routing, appears with a failed state in `get_gateway_status`, and can reconnect on a later
+approved execution according to its configured retry policy. Status exposes only server
+names, connection states, and capability counts.
+
 Your client or skill calls `prepare_gateway_request` before an external LLM handoff and
 forwards only the returned `ucr.external_handoff.v1` payload. Context Broker does not call
 an external LLM and never receives, persists, or uses provider credentials; the client or
 skill owns provider selection, credentials, and the provider call. Use
 `execute_gateway_plan` only for the policy-checked plan returned by the handoff, and use
-`get_gateway_status` to inspect the active limits and gateway metrics.
-
-Gateway enforcement applies only to requests that reach Context Broker. Directly registered
-downstream MCPs bypass this gateway, so they are unsupported for a gateway-mode client.
+`get_gateway_status` to inspect active limits, downstream state, and gateway metrics.
 
 ### Example Queries
 
@@ -443,6 +483,7 @@ downstream MCPs bypass this gateway, so they are unsupported for a gateway-mode 
 | `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
 | `CONTEXT_BROKER_GATEWAY_MODE` | Expose only the credential-preserving gateway tools | `0` |
 | `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` | Maximum token budget for an external handoff | `1200` |
+| `CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH` | JSON document for gateway-managed downstream MCP servers | *(empty)* |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.

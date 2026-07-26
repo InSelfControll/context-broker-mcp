@@ -45,6 +45,11 @@ def gateway_token_budget() -> int:
     return max(1, _get_env_int("CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET", 1200))
 
 
+def gateway_downstream_config_path() -> str:
+    """Return the optional configured downstream MCP document path."""
+    return os.environ.get("CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH", "").strip()
+
+
 # =============================================================================
 # SYSTEM CONFIGURATION
 # =============================================================================

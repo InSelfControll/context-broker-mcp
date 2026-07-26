@@ -123,6 +123,7 @@ def prepare_gateway_request(
     project_root: str = "",
     token_budget: int = 1200,
     top_k: int = 5,
+    registry: ToolRegistry | None = None,
 ) -> dict[str, Any]:
     """Prepare a routing-first, bounded context handoff without calling a provider."""
     if not task:
@@ -131,12 +132,14 @@ def prepare_gateway_request(
         raise ValueError("token budget must be positive")
 
     effective_token_budget = min(token_budget, gateway_token_budget())
-    route_result = route_task(
-        task,
-        mode="plan_only",
-        token_budget=effective_token_budget,
-        top_k=top_k,
-    )
+    route_kwargs: dict[str, Any] = {
+        "mode": "plan_only",
+        "token_budget": effective_token_budget,
+        "top_k": top_k,
+    }
+    if registry is not None:
+        route_kwargs["registry"] = registry
+    route_result = route_task(task, **route_kwargs)
     search_result = (
         search_context(task, project_root=project_root, top_k=top_k)["result"]
         if project_root
@@ -168,11 +171,16 @@ def execute_gateway_plan(
     )
 
 
-def get_gateway_status() -> dict[str, Any]:
+def get_gateway_status(
+    downstreams: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Return the active gateway settings and aggregate handoff metrics."""
-    return {
+    status = {
         "version": "ucr.gateway_status.v1",
         "enabled": gateway_mode_enabled(),
         "default_token_budget": gateway_token_budget(),
         "metrics": METRICS.snapshot(),
     }
+    if downstreams is not None:
+        status["downstreams"] = downstreams
+    return status
