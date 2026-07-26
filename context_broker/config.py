@@ -30,6 +30,21 @@ def _get_env_float(name: str, default: float) -> float:
         return default
 
 
+def gateway_mode_enabled() -> bool:
+    """Return whether the credential-preserving MCP gateway is enabled."""
+    return os.environ.get("CONTEXT_BROKER_GATEWAY_MODE", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def gateway_token_budget() -> int:
+    """Return the current default token budget for gateway handoffs."""
+    return max(1, _get_env_int("CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET", 1200))
+
+
 # =============================================================================
 # SYSTEM CONFIGURATION
 # =============================================================================
