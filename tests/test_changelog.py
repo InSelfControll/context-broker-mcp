@@ -274,6 +274,115 @@ class TestValidateChangelog:
         assert result["status"] == "up_to_date"
         assert result["valid"] is True
 
+    def test_changelog_only_commit_does_not_require_recursive_entry(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        (repo / "app.py").write_text("VALUE = 1\n")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "feat: initial"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        changelog = repo / "CHANGELOG.md"
+        update_changelog(changelog, version="0.1.0", cwd=str(repo))
+        subprocess.run(
+            ["git", "add", "CHANGELOG.md"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "docs: update changelog"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+        result = validate_changelog(changelog)
+
+        assert result["status"] == "up_to_date"
+        assert result["valid"] is True
+        assert result["missing_count"] == 0
+
+    def test_mixed_changelog_and_code_commit_still_requires_entry(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        import subprocess
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@test.com"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Test"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        (repo / "app.py").write_text("VALUE = 1\n")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "feat: initial"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        changelog = repo / "CHANGELOG.md"
+        update_changelog(changelog, version="0.1.0", cwd=str(repo))
+        subprocess.run(
+            ["git", "add", "CHANGELOG.md"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", "docs: establish changelog"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+        (repo / "app.py").write_text("VALUE = 2\n")
+        changelog.write_text(changelog.read_text() + "\nmanual note\n")
+        subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "fix: change code and changelog"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+
+        result = validate_changelog(changelog)
+
+        assert result["status"] == "outdated"
+        assert result["valid"] is False
+        assert result["missing_count"] == 1
+
 
 class TestEmojiAndLabels:
     """Tests for emoji and label mappings."""
