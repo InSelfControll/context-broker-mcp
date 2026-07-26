@@ -50,6 +50,14 @@ def gateway_downstream_config_path() -> str:
     return os.environ.get("CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH", "").strip()
 
 
+def gateway_plan_claim_ttl_seconds() -> int:
+    """Return the lifetime of one process-local gateway plan claim."""
+    return max(
+        1,
+        _get_env_int("CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS", 300),
+    )
+
+
 # =============================================================================
 # SYSTEM CONFIGURATION
 # =============================================================================

@@ -191,7 +191,14 @@ class ManagedDownstreamConnection:
         await self.ensure_ready()
         if self._session is None:
             raise RuntimeError("downstream session is not connected")
-        result = await self._session.call_tool(name, arguments or {})
+        try:
+            result = await self._session.call_tool(name, arguments or {})
+        except Exception:
+            await self.disconnect()
+            self.capabilities = None
+            self.last_error = None
+            self.state = ConnectionState.DEGRADED
+            raise
         return DownstreamCallResult(
             server=self.config.name,
             tool=name,

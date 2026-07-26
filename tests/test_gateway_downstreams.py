@@ -116,6 +116,16 @@ def _downstream_plan() -> dict[str, Any]:
     }
 
 
+async def _issued_downstream_plan(runtime: Any) -> tuple[dict[str, Any], str]:
+    handoff = await runtime.prepare_gateway_request(
+        "use context7 lookup for library documentation",
+        token_budget=1200,
+        top_k=1,
+    )
+    assert handoff["route"]["plan"]["nodes"][0]["tool_id"] == "context7.lookup"
+    return copy.deepcopy(handoff["route"]["plan"]), str(handoff["issuance"]["claim"])
+
+
 def test_downstream_config_expands_only_injected_environment_references(
     tmp_path: Path,
 ) -> None:
@@ -576,8 +586,10 @@ async def test_runtime_redacts_credential_keys_without_losing_collision_values(
     await runtime.initialize()
 
     persisted = (tmp_path / "registry" / "token-slim-router-tools.json").read_text()
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
     result = await runtime.execute_gateway_plan(
-        _downstream_plan(),
+        plan,
+        issuance_claim,
         arguments_by_tool={"context7.lookup": {"query": "documentation"}},
         confirmed=True,
     )
@@ -716,13 +728,13 @@ async def test_runtime_rejects_stale_or_tampered_plan_metadata(
         registry=ToolRegistry(cache_dir=tmp_path / "registry"),
     )
     await runtime.initialize()
-    plan = copy.deepcopy(_downstream_plan())
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
     if field == "version":
         plan["version"] = replacement
     else:
         plan["nodes"][0][field] = replacement
 
-    result = await runtime.execute_gateway_plan(plan, confirmed=True)
+    result = await runtime.execute_gateway_plan(plan, issuance_claim, confirmed=True)
 
     assert result["version"] == "ucr.execution_result.v1"
     assert result["status"] == "blocked"
@@ -825,20 +837,6 @@ async def test_runtime_offloads_sync_prepare_and_safety_work(
     registry.register(descriptor)
     offloaded_functions: list[Any] = []
 
-    def fake_prepare(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {"version": "ucr.external_handoff.v1"}
-
-    def fake_execute(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        return {"version": "ucr.execution_result.v1", "status": "ok", "results": []}
-
-    async def fake_run_sync(function: Any) -> Any:
-        offloaded_functions.append(function)
-        return function()
-
-    monkeypatch.setattr(downstream_tasks, "prepare_gateway_request_api", fake_prepare)
-    monkeypatch.setattr(downstream_tasks, "execute_gateway_plan_api", fake_execute)
-    monkeypatch.setattr(downstream_tasks.to_thread, "run_sync", fake_run_sync)
-    runtime = GatewayDownstreamRuntime(registry=registry)
     plan = {
         "version": "ucr.plan.v1",
         "nodes": [
@@ -852,10 +850,46 @@ async def test_runtime_offloads_sync_prepare_and_safety_work(
         ],
     }
 
-    await runtime.prepare_gateway_request("inspect")
-    await runtime.execute_gateway_plan(plan)
+    def fake_components(*_args: Any, **_kwargs: Any) -> tuple[Any, Any, int]:
+        return (
+            {"intent": {}, "exposure_set": {"tools": ["inspect"]}, "plan": plan},
+            {"results": []},
+            1200,
+        )
 
-    assert len(offloaded_functions) == 2
+    def fake_build(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "version": "ucr.external_handoff.v1",
+            "route": {
+                "intent": {},
+                "exposure_set": {"tools": ["inspect"]},
+                "plan": plan,
+            },
+            "issuance": kwargs["issuance"],
+            "metrics": {"candidate_tokens": 1, "sent_tokens": 1},
+        }
+
+    def fake_preflight(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"version": "ucr.execution_result.v1", "status": "ok", "results": []}
+
+    def fake_execute(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"version": "ucr.execution_result.v1", "status": "ok", "results": []}
+
+    async def fake_run_sync(function: Any) -> Any:
+        offloaded_functions.append(function)
+        return function()
+
+    monkeypatch.setattr(downstream_tasks, "prepare_gateway_components", fake_components)
+    monkeypatch.setattr(downstream_tasks, "build_external_handoff", fake_build)
+    monkeypatch.setattr(downstream_tasks, "preflight_gateway_plan", fake_preflight)
+    monkeypatch.setattr(downstream_tasks, "execute_gateway_plan_api", fake_execute)
+    monkeypatch.setattr(downstream_tasks.to_thread, "run_sync", fake_run_sync)
+    runtime = GatewayDownstreamRuntime(registry=registry)
+
+    handoff = await runtime.prepare_gateway_request("inspect")
+    await runtime.execute_gateway_plan(plan, handoff["issuance"]["claim"])
+
+    assert len(offloaded_functions) == 4
     assert all(callable(function) for function in offloaded_functions)
     await runtime.close()
 
@@ -885,8 +919,10 @@ async def test_runtime_requires_confirmation_before_downstream_execution(
         registry=ToolRegistry(cache_dir=tmp_path / "registry"),
     )
 
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
     unconfirmed = await runtime.execute_gateway_plan(
-        _downstream_plan(),
+        plan,
+        issuance_claim,
         arguments_by_tool={"context7.lookup": {"query": "FastMCP lifespan"}},
     )
 
@@ -895,7 +931,8 @@ async def test_runtime_requires_confirmation_before_downstream_execution(
     assert session.calls == []
 
     confirmed = await runtime.execute_gateway_plan(
-        _downstream_plan(),
+        plan,
+        issuance_claim,
         arguments_by_tool={"context7.lookup": {"query": "FastMCP lifespan"}},
         confirmed=True,
     )
@@ -907,7 +944,157 @@ async def test_runtime_requires_confirmation_before_downstream_execution(
     assert session.calls == [("lookup", {"query": "FastMCP lifespan"})]
     assert "opaque-runtime-secret" not in json.dumps(confirmed)
 
+    replay = await runtime.execute_gateway_plan(
+        plan,
+        issuance_claim,
+        arguments_by_tool={"context7.lookup": {"query": "FastMCP lifespan"}},
+        confirmed=True,
+    )
+    assert replay["status"] == "blocked"
+    assert session.calls == [("lookup", {"query": "FastMCP lifespan"})]
+
     await runtime.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("issuance_claim", ["", "unknown-claim", "tampered-claim"])
+async def test_runtime_rejects_unissued_claim_before_safety_or_calls(
+    tmp_path: Path,
+    issuance_claim: str,
+) -> None:
+    """An opaque runtime-issued claim is mandatory before any execution work."""
+    from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
+
+    config_path = tmp_path / "downstreams.json"
+    _write_downstream_config(config_path)
+    session = FakeDownstreamSession("opaque-unissued-secret")
+
+    @asynccontextmanager
+    async def fake_factory(_config: DownstreamServerConfig) -> AsyncIterator[Any]:
+        yield session
+
+    runtime = GatewayDownstreamRuntime(
+        config_path=config_path,
+        environ={
+            "CONTEXT7_AUTH": "opaque-unissued-secret",
+            "CONTEXT7_TOKEN": "opaque-unissued-secret",
+        },
+        manager=DownstreamConnectionManager(session_factory=fake_factory),
+        registry=ToolRegistry(cache_dir=tmp_path / "registry"),
+    )
+
+    result = await runtime.execute_gateway_plan(
+        _downstream_plan(),
+        issuance_claim,
+        confirmed=True,
+    )
+
+    assert result["status"] == "blocked"
+    assert session.calls == []
+    await runtime.close()
+
+
+@pytest.mark.anyio
+async def test_runtime_rejects_expired_claim_before_safety_or_calls(tmp_path: Path) -> None:
+    """Claims expire against the configured runtime-local TTL."""
+    from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
+
+    config_path = tmp_path / "downstreams.json"
+    _write_downstream_config(config_path)
+    session = FakeDownstreamSession("opaque-expired-secret")
+    now = [1000.0]
+
+    @asynccontextmanager
+    async def fake_factory(_config: DownstreamServerConfig) -> AsyncIterator[Any]:
+        yield session
+
+    runtime = GatewayDownstreamRuntime(
+        config_path=config_path,
+        environ={
+            "CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS": "1",
+            "CONTEXT7_AUTH": "opaque-expired-secret",
+            "CONTEXT7_TOKEN": "opaque-expired-secret",
+        },
+        manager=DownstreamConnectionManager(session_factory=fake_factory),
+        registry=ToolRegistry(cache_dir=tmp_path / "registry"),
+        clock=lambda: now[0],
+    )
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
+    now[0] += 2
+
+    result = await runtime.execute_gateway_plan(plan, issuance_claim, confirmed=True)
+
+    assert result["status"] == "blocked"
+    assert session.calls == []
+    await runtime.close()
+
+
+@pytest.mark.anyio
+async def test_runtime_rejects_claim_after_registry_generation_drift(tmp_path: Path) -> None:
+    """Bind claims to the complete registry fingerprint and generation."""
+    from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
+    from context_broker.router_ttc.tools.registry_tools import ToolDescriptor
+
+    config_path = tmp_path / "downstreams.json"
+    _write_downstream_config(config_path)
+    session = FakeDownstreamSession("opaque-drift-secret")
+
+    @asynccontextmanager
+    async def fake_factory(_config: DownstreamServerConfig) -> AsyncIterator[Any]:
+        yield session
+
+    runtime = GatewayDownstreamRuntime(
+        config_path=config_path,
+        environ={
+            "CONTEXT7_AUTH": "opaque-drift-secret",
+            "CONTEXT7_TOKEN": "opaque-drift-secret",
+        },
+        manager=DownstreamConnectionManager(session_factory=fake_factory),
+        registry=ToolRegistry(cache_dir=tmp_path / "registry"),
+    )
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
+    runtime.registry.register(
+        ToolDescriptor(id="new-tool", name="new-tool", description="registry drift")
+    )
+
+    result = await runtime.execute_gateway_plan(plan, issuance_claim, confirmed=True)
+
+    assert result["status"] == "blocked"
+    assert session.calls == []
+    await runtime.close()
+
+
+@pytest.mark.anyio
+async def test_runtime_close_invalidates_claims_and_restores_registry_baseline(
+    tmp_path: Path,
+) -> None:
+    """Closing a lifespan clears issued authority and discovered descriptors."""
+    from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
+
+    config_path = tmp_path / "downstreams.json"
+    _write_downstream_config(config_path)
+    session = FakeDownstreamSession("opaque-close-secret")
+
+    @asynccontextmanager
+    async def fake_factory(_config: DownstreamServerConfig) -> AsyncIterator[Any]:
+        yield session
+
+    runtime = GatewayDownstreamRuntime(
+        config_path=config_path,
+        environ={
+            "CONTEXT7_AUTH": "opaque-close-secret",
+            "CONTEXT7_TOKEN": "opaque-close-secret",
+        },
+        manager=DownstreamConnectionManager(session_factory=fake_factory),
+        registry=ToolRegistry(cache_dir=tmp_path / "registry"),
+    )
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
+    await runtime.close()
+
+    assert runtime.registry.get("context7.lookup") is None
+    result = await runtime.execute_gateway_plan(plan, issuance_claim, confirmed=True)
+    assert result["status"] == "blocked"
+    assert session.calls == []
 
 
 @pytest.mark.anyio
@@ -931,10 +1118,12 @@ async def test_runtime_redacts_downstream_failures(tmp_path: Path) -> None:
         registry=ToolRegistry(cache_dir=tmp_path / "registry"),
     )
     await runtime.initialize()
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
     session.fail_calls = True
 
     result = await runtime.execute_gateway_plan(
-        _downstream_plan(),
+        plan,
+        issuance_claim,
         arguments_by_tool={"context7.lookup": {"query": "documentation"}},
         confirmed=True,
     )
@@ -944,6 +1133,73 @@ async def test_runtime_redacts_downstream_failures(tmp_path: Path) -> None:
     assert result["results"][0]["error"] == "downstream failed with [REDACTED]"
     assert secret not in json.dumps(result)
 
+    await runtime.close()
+
+
+@pytest.mark.anyio
+async def test_failed_established_call_degrades_without_replay_then_reconnects(
+    tmp_path: Path,
+) -> None:
+    """Never replay a failed call; reconnect only for the next explicit request."""
+    from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
+
+    config_path = tmp_path / "downstreams.json"
+    _write_downstream_config(config_path)
+    first = FakeDownstreamSession("opaque-reconnect-secret")
+    first.fail_calls = True
+    second = FakeDownstreamSession("opaque-reconnect-secret")
+    sessions = [first, second]
+    enters = 0
+
+    @asynccontextmanager
+    async def rotating_factory(_config: DownstreamServerConfig) -> AsyncIterator[Any]:
+        nonlocal enters
+        session = sessions[enters]
+        enters += 1
+        yield session
+
+    runtime = GatewayDownstreamRuntime(
+        config_path=config_path,
+        environ={
+            "CONTEXT7_AUTH": "opaque-reconnect-secret",
+            "CONTEXT7_TOKEN": "opaque-reconnect-secret",
+        },
+        manager=DownstreamConnectionManager(session_factory=rotating_factory),
+        registry=ToolRegistry(cache_dir=tmp_path / "registry"),
+    )
+    plan, issuance_claim = await _issued_downstream_plan(runtime)
+
+    failed = await runtime.execute_gateway_plan(
+        plan,
+        issuance_claim,
+        arguments_by_tool={"context7.lookup": {"query": "first"}},
+        confirmed=True,
+    )
+    replay = await runtime.execute_gateway_plan(
+        plan,
+        issuance_claim,
+        arguments_by_tool={"context7.lookup": {"query": "first"}},
+        confirmed=True,
+    )
+
+    assert failed["status"] == "error"
+    assert replay["status"] == "blocked"
+    assert first.calls == [("lookup", {"query": "first"})]
+    assert enters == 1
+    assert runtime.status()["initialization_state"] == "degraded"
+
+    next_plan, next_claim = await _issued_downstream_plan(runtime)
+    recovered = await runtime.execute_gateway_plan(
+        next_plan,
+        next_claim,
+        arguments_by_tool={"context7.lookup": {"query": "second"}},
+        confirmed=True,
+    )
+
+    assert recovered["status"] == "ok"
+    assert first.calls == [("lookup", {"query": "first"})]
+    assert second.calls == [("lookup", {"query": "second"})]
+    assert enters == 2
     await runtime.close()
 
 
@@ -1044,3 +1300,55 @@ async def test_fastmcp_gateway_reuses_runtime_and_closes_it_on_shutdown(
     captured = capsys.readouterr()
     assert secret not in captured.out
     assert secret not in captured.err
+
+
+@pytest.mark.anyio
+async def test_fastmcp_gateway_supports_two_sequential_lifespans(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A closed runtime must rediscover identical descriptor IDs in a new lifespan."""
+    from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
+
+    config_path = tmp_path / "downstreams.json"
+    _write_downstream_config(config_path)
+    secret = "opaque-two-lifespans-secret"
+    sessions: list[FakeDownstreamSession] = []
+
+    @asynccontextmanager
+    async def fake_factory(_config: DownstreamServerConfig) -> AsyncIterator[Any]:
+        session = FakeDownstreamSession(secret)
+        sessions.append(session)
+        try:
+            yield session
+        finally:
+            session.closed = True
+
+    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_MODE", "1")
+    monkeypatch.setenv("CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH", str(config_path))
+    monkeypatch.setenv("CONTEXT7_AUTH", secret)
+    monkeypatch.setenv("CONTEXT7_TOKEN", secret)
+    runtime = GatewayDownstreamRuntime(
+        manager=DownstreamConnectionManager(session_factory=fake_factory),
+        registry=ToolRegistry(cache_dir=tmp_path / "registry"),
+    )
+    server = create_mcp_server(gateway_runtime=runtime)
+
+    for _ in range(2):
+        async with Client(server) as client:
+            prepared = await client.call_tool(
+                "prepare_gateway_request",
+                {
+                    "task": "use context7 lookup for library documentation",
+                    "token_budget": 1200,
+                    "top_k": 1,
+                },
+            )
+            handoff = json.loads(str(prepared.data))
+            assert handoff["route"]["plan"]["nodes"][0]["tool_id"] == "context7.lookup"
+            assert handoff["issuance"]["claim"]
+
+        assert runtime.registry.get("context7.lookup") is None
+
+    assert len(sessions) == 2
+    assert all(session.closed for session in sessions)

@@ -380,6 +380,7 @@ is unsupported for a gateway-mode client.
       "env": {
         "CONTEXT_BROKER_GATEWAY_MODE": "1",
         "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200",
+        "CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS": "300",
         "CONTEXT_BROKER_AUTO_LOAD_ENV": "0",
         "CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH": "/path/to/gateway-downstreams.json"
       }
@@ -438,9 +439,16 @@ Your client or skill calls `prepare_gateway_request` before an external LLM hand
 forwards only the returned `ucr.external_handoff.v1` payload. Context Broker does not call
 an external LLM and never receives, persists, or uses provider credentials; the client or
 skill owns provider selection, credentials, and the provider call. Use
-`execute_gateway_plan` only for the policy-checked plan returned by the handoff. Execution
-rejects plans whose version, server, risk, or capability metadata no longer matches the live
-registry descriptor. Use `get_gateway_status` to inspect active limits, downstream state, and
+`execute_gateway_plan` only with the policy-checked `route.plan` and required opaque
+`issuance.claim` returned by that same handoff. The stable route field is
+`route.exposure_set`. `context.budget` caps the complete canonical serialized handoff;
+mandatory task, route, metrics, and issuance fields are never trimmed, and only context
+items may be shortened. Claims expire after
+`CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS` (300 seconds by default), remain reusable
+while confirmation is pending, and are consumed atomically before approved side effects.
+Execution rejects missing, expired, consumed, tampered, or registry-drifted claims. A failed
+established downstream call is disconnected and never replayed; the next explicit request
+may reconnect. Use `get_gateway_status` to inspect active limits, downstream state, and
 gateway metrics.
 
 ### Example Queries
@@ -489,6 +497,7 @@ gateway metrics.
 | `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
 | `CONTEXT_BROKER_GATEWAY_MODE` | Expose only the credential-preserving gateway tools | `0` |
 | `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` | Maximum token budget for an external handoff | `1200` |
+| `CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS` | Process-local gateway execution claim TTL | `300` |
 | `CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH` | JSON document for gateway-managed downstream MCP servers | *(empty)* |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.

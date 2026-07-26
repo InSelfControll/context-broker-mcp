@@ -43,8 +43,9 @@ credentials.
 
 - `prepare_gateway_request(task, project_root?, token_budget?, top_k?)` prepares the
   handoff and never invokes an external LLM.
-- `execute_gateway_plan(plan)` executes already-selected, policy-checked plan nodes
-  through the existing execution path. Confirmation requirements remain unchanged.
+- `execute_gateway_plan(plan, issuance_claim)` executes already-selected,
+  policy-checked plan nodes through the existing execution path. The opaque claim is
+  required and confirmation requirements remain unchanged.
 - `get_gateway_status()` reports mode, configured limits, and gateway metrics.
 
 Gateway mode hides the broad legacy tool surface from the exposed FastMCP server.
@@ -58,21 +59,27 @@ When disabled, current tool registration and behavior are unchanged.
 {
   "version": "ucr.external_handoff.v1",
   "task": "original user task",
-  "route": {"intent": {}, "exposure": [], "plan": {}},
+  "route": {"intent": {}, "exposure_set": {}, "plan": {}},
   "context": {"items": [], "token_count": 0, "budget": 0},
-  "metrics": {"candidate_tokens": 0, "sent_tokens": 0, "saved_tokens": 0}
+  "metrics": {"candidate_tokens": 0, "sent_tokens": 0, "saved_tokens": 0},
+  "issuance": {"claim": "opaque runtime claim", "expires_at": 0}
 }
 ```
 
 The payload excludes environment values, provider credentials, blocked secret files,
 and unselected tools. It is data, not executable instructions; the client retains
-control of provider selection and execution.
+control of provider selection and execution. `context.budget` caps the complete
+canonical serialized handoff, including task, route, context, metrics, and issuance.
+Mandatory fields are never trimmed; preparation fails when they cannot fit. Only
+`context.items` may be shortened.
 
 ## Configuration and Session Scope
 
 - `CONTEXT_BROKER_GATEWAY_MODE=1` enables the restricted surface for every process
   session started with that environment.
 - `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` supplies the default payload limit.
+- `CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS` sets the process-local claim TTL
+  and defaults to 300 seconds.
 - Client installation examples will register only Context Broker; downstream MCP
   servers are configured inside Context Broker as its managed clients.
 
@@ -84,6 +91,13 @@ mode documentation.
 
 - Retrieval and secret filtering occur before the handoff is assembled.
 - Tool exposure and execution continue to use existing safety and confirmation gates.
+- Claims bind the exact plan, `route.exposure_set`, complete registry generation and
+  fingerprint, and runtime lifetime. Missing, unknown, expired, drifted, tampered, and
+  consumed claims fail before safety checks or tool calls.
+- A confirmation-only response does not consume a claim. Approved execution consumes
+  it atomically before side effects, and execution failures remain consumed.
+- A failed established downstream call is not replayed. The session is disconnected,
+  marked degraded, and retried only by the next explicit gateway request.
 - If routing or retrieval fails, the gateway returns a typed, redacted failure without
   broadening context or falling back to an external provider call.
 - No provider token, endpoint, or response is written to Context Broker storage.
