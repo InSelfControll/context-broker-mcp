@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] — 2026-07-26
+
+### Added
+
+- ✨ wire gateway downstream MCP servers — `184b596`
+- ✨ add restricted gateway MCP surface — `74e28e7`
+- ✨ add bounded external handoff gateway — `6f2971e`
+
+### Fixed
+
+- 🐛 enforce gateway handoff budgets — `d1489fb`
+- 🐛 allow harnesses to skip dotenv loading — `7e29ea5`
+
+### Documentation
+
+- 📝 require gateway-first client integration — `6755c9a`
+- 📝 plan credential-preserving gateway — `060968e`
+- 📝 specify credential-preserving gateway — `189b6c1`
+- 📝 record model bootstrap refinement — `a5f6a00`
+
+### Testing
+
+- ✅ cover gateway public contracts — `17fee14`
+- ✅ verify gateway safety and metrics — `bc0e148`
+
+### Chore
+
+- 🔧 ignore local worktrees — `55ac11f`
+
 ## [Unreleased] — 2026-07-23
 
 ### Fixed
