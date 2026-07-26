@@ -170,23 +170,30 @@ class ToolRegistry:
         self.redis_url = redis_url
         self._tools: dict[str, ToolDescriptor] = {}
         self._vectors: dict[str, dict[str, float]] = {}
+        self._generation = 0
 
     def register(self, descriptor: ToolDescriptor) -> None:
         """Register or replace one descriptor."""
         self._tools[descriptor.id] = descriptor
         self._vectors[descriptor.id] = _vectorize(descriptor.searchable_text())
+        self._generation += 1
         self.save_cache()
 
     def register_many(self, descriptors: Iterable[ToolDescriptor]) -> None:
         """Register many descriptors and persist the resulting cache."""
-        for descriptor in descriptors:
+        batch = list(descriptors)
+        for descriptor in batch:
             self._tools[descriptor.id] = descriptor
             self._vectors[descriptor.id] = _vectorize(descriptor.searchable_text())
-        self.save_cache()
+        if batch:
+            self._generation += 1
+            self.save_cache()
 
     def ingest_downstream_capabilities(
         self,
         capabilities: DownstreamCapabilities | dict[str, Any],
+        *,
+        allow_identical: bool = False,
     ) -> None:
         """Register downstream MCP tools discovered by the client subsystem."""
         payload = (
@@ -209,12 +216,20 @@ class ToolRegistry:
                     f"duplicate downstream tool identity for server {server}"
                 )
             if descriptor.id in self._tools:
+                if allow_identical and self._tools[descriptor.id] == descriptor:
+                    discovered_ids.add(descriptor.id)
+                    continue
                 raise ValueError(
                     f"downstream tool identity collision for server {server}"
                 )
             discovered_ids.add(descriptor.id)
             descriptors.append(descriptor)
         self.register_many(descriptors)
+
+    @property
+    def generation(self) -> int:
+        """Return the process-local mutation generation of the complete registry."""
+        return self._generation
 
     def get(self, tool_id: str) -> ToolDescriptor | None:
         """Return a descriptor by id."""

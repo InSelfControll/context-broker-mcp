@@ -89,6 +89,7 @@ before a one-time bootstrap download. Explicit `HF_HUB_OFFLINE=1` or
 | `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web dashboard | `8770` | Any free port |
 | `CONTEXT_BROKER_GATEWAY_MODE` | Expose only the credential-preserving gateway tools | `0` | `0`, `1`, `true`, `false` |
 | `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` | Maximum token budget for an external handoff | `1200` | Any positive integer |
+| `CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS` | Process-local gateway execution claim TTL | `300` | Any positive integer |
 | `CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH` | JSON document for gateway-managed downstream MCP servers | *(empty)* | A JSON path, never a `.env` path |
 
 By default, Context Broker uses half of available CPU cores for indexing/search workloads.
@@ -218,6 +219,7 @@ Use the following client-neutral server configuration:
       "env": {
         "CONTEXT_BROKER_GATEWAY_MODE": "1",
         "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200",
+        "CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS": "300",
         "CONTEXT_BROKER_AUTO_LOAD_ENV": "0",
         "CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH": "/path/to/gateway-downstreams.json"
       }
@@ -277,9 +279,15 @@ Before you invoke an external LLM, your client or skill calls `prepare_gateway_r
 forwards only the returned `ucr.external_handoff.v1` payload. Context Broker never calls an
 external LLM and never receives, persists, or uses provider credentials. Your client or
 skill keeps provider selection, credentials, and the provider call. If execution is needed,
-call `execute_gateway_plan` only with the policy-checked plan from the handoff; call
-`get_gateway_status` to inspect active limits, downstream names/states/counts, and gateway
-metrics.
+call `execute_gateway_plan` only with `route.plan` and the required opaque
+`issuance.claim` from the same handoff. The stable route field is `route.exposure_set`.
+`context.budget` caps the complete canonical serialized handoff; mandatory fields are never
+trimmed and only context items may be shortened. Claims default to a 300-second TTL via
+`CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS`, remain reusable while confirmation is
+pending, and are consumed atomically before approved side effects. Missing, expired,
+consumed, tampered, and registry-drifted claims are rejected. Failed established calls are
+never replayed; a later explicit request may reconnect. Call `get_gateway_status` to inspect
+active limits, downstream names/states/counts, and gateway metrics.
 
 ---
 

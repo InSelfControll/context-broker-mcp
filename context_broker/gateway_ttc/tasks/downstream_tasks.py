@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
+import hashlib
 from pathlib import Path
+import secrets
+import time
 from typing import Any, Mapping
 
 from anyio import to_thread
@@ -14,19 +19,37 @@ from context_broker.client_ttc.codebase.api import (
     DownstreamConnectionManager,
     ManagedDownstreamConnection,
 )
-from context_broker.config import CACHE_DIR, gateway_downstream_config_path
-from context_broker.gateway_ttc.tasks.gateway_tasks import (
-    execute_gateway_plan as execute_gateway_plan_api,
+from context_broker.config import (
+    CACHE_DIR,
+    gateway_downstream_config_path,
+    gateway_plan_claim_ttl_seconds,
 )
 from context_broker.gateway_ttc.tasks.gateway_tasks import (
-    prepare_gateway_request as prepare_gateway_request_api,
+    build_external_handoff,
+    canonical_json,
+    execute_gateway_plan as execute_gateway_plan_api,
+    preflight_gateway_plan,
+    prepare_gateway_components,
 )
 from context_broker.gateway_ttc.tools.downstream_config_tools import (
     load_downstream_server_configs,
 )
+from context_broker.gateway_ttc.tools.state import METRICS
 from context_broker.router_ttc.tools.default_tools import default_tool_descriptors
 from context_broker.router_ttc.tools.registry_tools import ToolDescriptor, ToolRegistry
 from context_broker.router_ttc.tools.safety_tools import redact_secrets
+
+
+@dataclass
+class _IssuedPlanClaim:
+    """Process-local authority bound to one exact prepared handoff."""
+
+    plan_digest: str
+    exposure_set_digest: str
+    registry_fingerprint: str
+    registry_generation: int
+    expires_at: float
+    consumed: bool = False
 
 
 class GatewayDownstreamRuntime:
@@ -39,6 +62,7 @@ class GatewayDownstreamRuntime:
         environ: Mapping[str, str] | None = None,
         manager: DownstreamConnectionManager | None = None,
         registry: ToolRegistry | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         configured_path = (
             str(config_path)
@@ -50,6 +74,20 @@ class GatewayDownstreamRuntime:
         self.manager = manager or DownstreamConnectionManager()
         self.registry = registry or ToolRegistry(cache_dir=Path(CACHE_DIR) / "gateway")
         self._lock = asyncio.Lock()
+        self._claim_lock = asyncio.Lock()
+        self._clock = clock
+        raw_ttl = (
+            environ.get("CONTEXT_BROKER_GATEWAY_PLAN_CLAIM_TTL_SECONDS")
+            if environ is not None
+            else None
+        )
+        try:
+            self._claim_ttl_seconds = max(1, int(raw_ttl)) if raw_ttl else (
+                gateway_plan_claim_ttl_seconds()
+            )
+        except ValueError:
+            self._claim_ttl_seconds = gateway_plan_claim_ttl_seconds()
+        self._issued_claims: dict[str, _IssuedPlanClaim] = {}
         self._initialized = False
         self._initialization_state = "not_initialized"
         self._secret_values: set[str] = set()
@@ -128,6 +166,8 @@ class GatewayDownstreamRuntime:
     def _ingest_connection_capabilities(
         self,
         connection: ManagedDownstreamConnection,
+        *,
+        allow_identical: bool = False,
     ) -> None:
         """Persist a redacted descriptor subset, then discard the raw discovery payload."""
         capabilities = connection.capabilities
@@ -146,7 +186,10 @@ class GatewayDownstreamRuntime:
         }
         try:
             safe_capabilities = self._redact(capabilities.to_dict())
-            self.registry.ingest_downstream_capabilities(safe_capabilities)
+            self.registry.ingest_downstream_capabilities(
+                safe_capabilities,
+                allow_identical=allow_identical,
+            )
         finally:
             self._discard_connection_discovery(connection)
 
@@ -166,7 +209,7 @@ class GatewayDownstreamRuntime:
             except Exception:
                 self._discard_connection_discovery(connection)
                 continue
-            self._ingest_connection_capabilities(connection)
+            self._ingest_connection_capabilities(connection, allow_identical=True)
         self._refresh_initialization_state()
 
     async def _clean_failed_initialization(self) -> None:
@@ -245,9 +288,9 @@ class GatewayDownstreamRuntime:
         await self.initialize()
         safe_task = self._redact_text(task)
         safe_project_root = self._redact_text(project_root)
-        handoff = await to_thread.run_sync(
+        route_result, search_result, effective_budget = await to_thread.run_sync(
             partial(
-                prepare_gateway_request_api,
+                prepare_gateway_components,
                 safe_task,
                 project_root=safe_project_root,
                 token_budget=token_budget,
@@ -255,7 +298,71 @@ class GatewayDownstreamRuntime:
                 registry=self.registry,
             )
         )
-        return self._redact(handoff)
+        claim = secrets.token_urlsafe(32)
+        expires_at = self._clock() + self._claim_ttl_seconds
+        issuance = {"claim": claim, "expires_at": int(expires_at)}
+        handoff = await to_thread.run_sync(
+            partial(
+                build_external_handoff,
+                safe_task,
+                route_result=route_result,
+                search_result=search_result,
+                token_budget=effective_budget,
+                issuance=issuance,
+            )
+        )
+        safe_handoff = self._redact(handoff)
+        plan = safe_handoff["route"]["plan"]
+        exposure_set = safe_handoff["route"]["exposure_set"]
+        record = _IssuedPlanClaim(
+            plan_digest=self._digest(plan),
+            exposure_set_digest=self._digest(exposure_set),
+            registry_fingerprint=self.registry.fingerprint(),
+            registry_generation=self.registry.generation,
+            expires_at=expires_at,
+        )
+        async with self._claim_lock:
+            self._prune_expired_claims()
+            self._issued_claims[claim] = record
+        metrics = safe_handoff["metrics"]
+        METRICS.record_handoff(metrics["candidate_tokens"], metrics["sent_tokens"])
+        return safe_handoff
+
+    def _digest(self, value: Any) -> str:
+        """Return a stable digest for one claim-bound handoff field."""
+        return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+    def _prune_expired_claims(self) -> None:
+        """Discard expired authority without exposing claim contents."""
+        now = self._clock()
+        expired = [
+            claim
+            for claim, record in self._issued_claims.items()
+            if record.expires_at <= now
+        ]
+        for claim in expired:
+            self._issued_claims.pop(claim, None)
+
+    def _claim_error(
+        self,
+        plan: dict[str, Any],
+        issuance_claim: str,
+    ) -> str | None:
+        """Validate a claim while the claim lock is held."""
+        self._prune_expired_claims()
+        record = self._issued_claims.get(issuance_claim)
+        if record is None:
+            return "gateway plan claim is missing, unknown, or expired"
+        if record.consumed:
+            return "gateway plan claim has already been consumed"
+        if record.plan_digest != self._digest(plan):
+            return "gateway plan does not match its issued claim"
+        if (
+            record.registry_generation != self.registry.generation
+            or record.registry_fingerprint != self.registry.fingerprint()
+        ):
+            return "gateway plan claim is stale after registry drift"
+        return None
 
     def _expected_capabilities(self, descriptor: ToolDescriptor) -> dict[str, Any]:
         """Return the exact planner metadata bound to a live descriptor."""
@@ -306,15 +413,39 @@ class GatewayDownstreamRuntime:
     async def execute_gateway_plan(
         self,
         plan: dict[str, Any],
+        issuance_claim: str,
         arguments_by_tool: dict[str, dict[str, Any]] | None = None,
         confirmed: bool = False,
     ) -> dict[str, Any]:
-        """Run the safety gate, then execute only approved downstream delegations."""
+        """Validate issued authority, then execute approved delegations at most once."""
+        async with self._claim_lock:
+            claim_error = self._claim_error(plan, issuance_claim)
+        if claim_error is not None:
+            return self._redact(self._blocked_execution(claim_error))
+
         await self.initialize()
         arguments_by_tool = arguments_by_tool or {}
         binding_error = self._plan_binding_error(plan)
         if binding_error is not None:
             return self._redact(self._blocked_execution(binding_error))
+        preflight = await to_thread.run_sync(
+            partial(
+                preflight_gateway_plan,
+                plan,
+                arguments_by_tool=arguments_by_tool,
+                registry=self.registry,
+                confirmed=confirmed,
+            )
+        )
+        if preflight["status"] in {"blocked", "needs_confirmation"}:
+            return self._redact(preflight)
+
+        async with self._claim_lock:
+            claim_error = self._claim_error(plan, issuance_claim)
+            if claim_error is not None:
+                return self._redact(self._blocked_execution(claim_error))
+            self._issued_claims[issuance_claim].consumed = True
+
         execution = await to_thread.run_sync(
             partial(
                 execute_gateway_plan_api,
@@ -347,6 +478,7 @@ class GatewayDownstreamRuntime:
                     downstream_error = downstream_error or not call_result.ok
                 except Exception as exc:
                     downstream_error = True
+                    self._refresh_initialization_state()
                     result = {
                         "status": "error",
                         "tool_id": descriptor.id,
@@ -414,5 +546,8 @@ class GatewayDownstreamRuntime:
             self._capability_counts.clear()
             self._secret_values.clear()
             self.environ = None
+            async with self._claim_lock:
+                self._issued_claims.clear()
             self._initialized = False
+            self._reset_registry_to_baseline()
             self._initialization_state = "closed"

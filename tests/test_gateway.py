@@ -15,7 +15,6 @@ from context_broker.gateway_ttc.tasks.gateway_tasks import (
     execute_gateway_plan,
     get_gateway_status,
 )
-from context_broker.indexer_ttc.tools.model_tools import get_encoder
 from context_broker.router_ttc.tools.registry_tools import ToolDescriptor, ToolRegistry
 from context_broker.server_ttc.codebase.assembly import create_mcp_server
 
@@ -74,33 +73,26 @@ async def test_gateway_execute_tool_parses_json_and_requires_confirmation(
     monkeypatch.setattr(downstream_tasks.to_thread, "run_sync", run_sync)
     monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_MODE", "1")
     server = create_mcp_server()
-    plan_json = json.dumps(
-        {
-            "version": "ucr.plan.v1",
-            "nodes": [
-                {
-                    "id": "n1",
-                    "tool_id": "ensure_changelog_tool",
-                    "server": "context-broker",
-                    "risk_level": "medium",
-                    "capabilities": {
-                        "file": True,
-                        "network": False,
-                        "shell": False,
-                    },
-                }
-            ],
-        }
-    )
     arguments_by_tool_json = json.dumps(
         {"ensure_changelog_tool": {"project_root": "/tmp/gateway-confirmation"}}
     )
 
     async with Client(server) as client:
+        prepared = await client.call_tool(
+            "prepare_gateway_request",
+            {
+                "task": "ensure the project changelog exists",
+                "token_budget": 1200,
+            },
+        )
+        handoff = json.loads(str(prepared.data))
+        plan_json = json.dumps(handoff["route"]["plan"])
+        issuance_claim = handoff["issuance"]["claim"]
         unconfirmed = await client.call_tool(
             "execute_gateway_plan",
             {
                 "plan_json": plan_json,
+                "issuance_claim": issuance_claim,
                 "arguments_by_tool_json": arguments_by_tool_json,
             },
         )
@@ -108,6 +100,7 @@ async def test_gateway_execute_tool_parses_json_and_requires_confirmation(
             "execute_gateway_plan",
             {
                 "plan_json": plan_json,
+                "issuance_claim": issuance_claim,
                 "arguments_by_tool_json": arguments_by_tool_json,
                 "confirmed": True,
             },
@@ -138,7 +131,7 @@ async def test_default_mode_keeps_representative_legacy_tools(
 
 
 def test_build_external_handoff_redacts_and_bounds_context() -> None:
-    """Prevent gateway handoffs from leaking secrets or exceeding their context budget."""
+    """Prevent gateway handoffs from leaking secrets or exceeding the whole payload budget."""
     route = {
         "intent": {"kind": "code_search"},
         "exposure_set": {"tools": ["context-broker.search_context"]},
@@ -155,18 +148,80 @@ def test_build_external_handoff_redacts_and_bounds_context() -> None:
         "inspect token=super-secret",
         route_result=route,
         search_result=search,
-        token_budget=20,
+        token_budget=250,
     )
 
     assert handoff["version"] == "ucr.external_handoff.v1"
     assert handoff["task"] == "inspect token=[REDACTED]"
-    assert handoff["context"]["token_count"] <= 20
+    actual_tokens = gateway_tasks.canonical_token_count(handoff)
+    assert actual_tokens <= 250
+    assert handoff["metrics"]["sent_tokens"] == actual_tokens
+    assert handoff["metrics"]["saved_tokens"] == (
+        handoff["metrics"]["candidate_tokens"] - actual_tokens
+    )
     assert "super-secret" not in json.dumps(handoff)
     assert handoff["metrics"]["saved_tokens"] > 0
 
 
 def test_build_external_handoff_bounds_serialized_allowlisted_context() -> None:
-    """Prevent paths or metadata from bypassing the serialized context token budget."""
+    """Trim only context and accept the exact canonical-envelope boundary."""
+    kwargs = {
+        "task": "inspect result",
+        "route_result": {"intent": {}, "exposure_set": {}, "plan": {}},
+        "search_result": {
+            "results": [
+                {
+                    "path": "nested/" + "long-path/" * 200,
+                    "content": "useful context " * 50,
+                    "metadata": "oversized metadata " * 200,
+                }
+            ]
+        },
+    }
+    roomy = build_external_handoff(
+        **kwargs,
+        token_budget=2000,
+    )
+    exact_budget = gateway_tasks.canonical_token_count(roomy)
+    for _ in range(8):
+        boundary = build_external_handoff(**kwargs, token_budget=exact_budget)
+        updated_budget = gateway_tasks.canonical_token_count(boundary)
+        if updated_budget == exact_budget:
+            break
+        exact_budget = updated_budget
+    handoff = build_external_handoff(
+        **kwargs,
+        token_budget=exact_budget,
+    )
+
+    items = handoff["context"]["items"]
+    serialized_tokens = gateway_tasks.canonical_token_count(items)
+
+    assert items
+    assert set(items[0]) == {"path", "content"}
+    assert "oversized metadata" not in json.dumps(items)
+    assert handoff["context"]["token_count"] == serialized_tokens
+    assert gateway_tasks.canonical_token_count(handoff) == exact_budget
+    assert handoff["context"]["items"] == roomy["context"]["items"]
+
+
+def test_build_external_handoff_rejects_mandatory_overhead_over_budget() -> None:
+    """Reject an oversized mandatory envelope instead of trimming task or route fields."""
+    with pytest.raises(ValueError, match="mandatory"):
+        build_external_handoff(
+            "mandatory task " * 200,
+            route_result={
+                "intent": {"kind": "code_search"},
+                "exposure_set": {"tools": ["context-broker.search_context"]},
+                "plan": {"version": "ucr.plan.v1", "nodes": []},
+            },
+            search_result={"results": []},
+            token_budget=20,
+        )
+
+
+def test_build_external_handoff_metrics_count_complete_canonical_payload() -> None:
+    """Make candidate, sent, and saved metrics describe the entire canonical handoff."""
     handoff = build_external_handoff(
         "inspect result",
         route_result={"intent": {}, "exposure_set": {}, "plan": {}},
@@ -179,17 +234,16 @@ def test_build_external_handoff_bounds_serialized_allowlisted_context() -> None:
                 }
             ]
         },
-        token_budget=20,
+        token_budget=400,
     )
 
-    items = handoff["context"]["items"]
-    serialized_tokens = len(get_encoder().encode(json.dumps(items)))
-
-    assert items
-    assert set(items[0]) == {"path", "content"}
-    assert "oversized metadata" not in json.dumps(items)
-    assert serialized_tokens <= 20
-    assert handoff["context"]["token_count"] == serialized_tokens
+    actual_tokens = gateway_tasks.canonical_token_count(handoff)
+    assert actual_tokens <= 400
+    assert handoff["metrics"]["sent_tokens"] == actual_tokens
+    assert handoff["metrics"]["candidate_tokens"] >= actual_tokens
+    assert handoff["metrics"]["saved_tokens"] == (
+        handoff["metrics"]["candidate_tokens"] - actual_tokens
+    )
 
 
 def test_prepare_gateway_request_caps_budget_to_current_configuration(
@@ -202,13 +256,14 @@ def test_prepare_gateway_request_caps_budget_to_current_configuration(
         routed_budgets.append(int(kwargs["token_budget"]))
         return {"intent": {}, "exposure_set": {}, "plan": {"nodes": []}}
 
-    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET", "7")
+    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET", "400")
     monkeypatch.setattr(gateway_tasks, "route_task", route)
 
-    handoff = gateway_tasks.prepare_gateway_request("inspect project", token_budget=100)
+    handoff = gateway_tasks.prepare_gateway_request("inspect project", token_budget=1000)
 
-    assert routed_budgets == [7]
-    assert handoff["context"]["budget"] == 7
+    assert routed_budgets == [400]
+    assert handoff["context"]["budget"] == 400
+    assert gateway_tasks.canonical_token_count(handoff) <= 400
 
 
 def test_gateway_status_accumulates_only_numeric_metrics_for_two_handoffs(
@@ -233,15 +288,15 @@ def test_gateway_status_accumulates_only_numeric_metrics_for_two_handoffs(
     monkeypatch.setattr(gateway_tasks, "search_context", search)
 
     first_handoff = gateway_tasks.prepare_gateway_request(
-        "inspect project", project_root="/workspace", token_budget=5
+        "inspect project", project_root="/workspace", token_budget=400
     )
     second_handoff = gateway_tasks.prepare_gateway_request(
-        "inspect project", project_root="/workspace", token_budget=5
+        "inspect project", project_root="/workspace", token_budget=400
     )
     after = get_gateway_status()["metrics"]
 
-    assert first_handoff["context"]["token_count"] <= 5
-    assert second_handoff["context"]["token_count"] <= 5
+    assert gateway_tasks.canonical_token_count(first_handoff) <= 400
+    assert gateway_tasks.canonical_token_count(second_handoff) <= 400
     assert "never-store-this" not in json.dumps(first_handoff)
     assert after["prepared_requests"] == before["prepared_requests"] + 2
     assert after["candidate_tokens"] == before["candidate_tokens"] + sum(
@@ -309,7 +364,7 @@ def test_prepare_gateway_request_routes_before_retrieval_and_skips_empty_project
 
     def route(task: str, **kwargs: object) -> dict[str, object]:
         calls.append(f"route:{task}")
-        assert kwargs == {"mode": "plan_only", "token_budget": 10, "top_k": 2}
+        assert kwargs == {"mode": "plan_only", "token_budget": 400, "top_k": 2}
         return {"intent": {}, "exposure_set": {}, "plan": {"nodes": []}}
 
     def search(task: str, project_root: str, top_k: int) -> dict[str, object]:
@@ -322,14 +377,14 @@ def test_prepare_gateway_request_routes_before_retrieval_and_skips_empty_project
     monkeypatch.setattr(gateway_tasks, "search_context", search)
 
     gateway_tasks.prepare_gateway_request(
-        "inspect project", project_root="/workspace", token_budget=10, top_k=2
+        "inspect project", project_root="/workspace", token_budget=400, top_k=2
     )
     empty_project = gateway_tasks.prepare_gateway_request(
-        "inspect project", token_budget=10, top_k=2
+        "inspect project", token_budget=400, top_k=2
     )
 
     assert calls == ["route:inspect project", "search:inspect project", "route:inspect project"]
-    assert empty_project["context"] == {"items": [], "token_count": 0, "budget": 10}
+    assert empty_project["context"] == {"items": [], "token_count": 1, "budget": 400}
 
 
 def test_gateway_rejects_invalid_handoff_requests() -> None:

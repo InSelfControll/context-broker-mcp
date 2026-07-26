@@ -11,53 +11,36 @@ from context_broker.indexer_ttc.tasks.snippet_tasks import truncate_to_token_lim
 from context_broker.indexer_ttc.tools.model_tools import get_encoder
 from context_broker.router_ttc.codebase.api import execute_plan, route_task, search_context
 from context_broker.router_ttc.tools.registry_tools import ToolRegistry
-from context_broker.router_ttc.tools.safety_tools import redact_secrets
+from context_broker.router_ttc.tools.safety_tools import (
+    SafetyDecision,
+    assess_tool_execution,
+    redact_secrets,
+)
 
 
-def _serialized_context_token_count(items: list[dict[str, str]], encoder: Any) -> int:
-    """Return the token cost of the exact serialized context items payload."""
-    if not items:
-        return 0
-    return len(encoder.encode(json.dumps(items)))
+def canonical_json(value: Any) -> str:
+    """Serialize a gateway value using the canonical wire representation."""
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
 
 
-def _truncate_item_value_to_budget(
-    items: list[dict[str, str]],
-    item: dict[str, str],
-    key: str,
-    value: str,
-    token_budget: int,
-    encoder: Any,
-) -> bool:
-    """Set one item value to the longest prefix that keeps the serialized payload bounded."""
-    item[key] = ""
-    if _serialized_context_token_count([*items, item], encoder) > token_budget:
-        return False
-
-    used_tokens = _serialized_context_token_count(items, encoder)
-    source_tokens = len(encoder.encode(value))
-    token_limit = min(source_tokens, max(0, token_budget - used_tokens))
-    truncated_value, truncated_tokens, _ = truncate_to_token_limit(value, encoder, token_limit)
-    for limit in range(truncated_tokens, -1, -1):
-        fitted_value, _, _ = truncate_to_token_limit(truncated_value, encoder, limit)
-        item[key] = fitted_value
-        if _serialized_context_token_count([*items, item], encoder) <= token_budget:
-            return True
-    return False
+def canonical_token_count(value: Any, encoder: Any | None = None) -> int:
+    """Count tokens in the exact canonical gateway wire representation."""
+    active_encoder = encoder or get_encoder()
+    return len(active_encoder.encode(canonical_json(value)))
 
 
-def _build_bounded_context_items(
-    search_result: dict[str, Any],
-    token_budget: int,
-    encoder: Any,
-) -> tuple[list[dict[str, str]], int]:
-    """Allowlist, redact, and strictly bound serialized search-result context items."""
-    items: list[dict[str, str]] = []
+def _candidate_context_items(search_result: dict[str, Any]) -> list[dict[str, str]]:
+    """Allowlist and redact search result fields eligible for context trimming."""
     candidate_items: list[dict[str, str]] = []
     raw_results = search_result.get("results", [])
-
     if not isinstance(raw_results, list):
-        return items, 0
+        return candidate_items
 
     for raw_result in raw_results:
         if not isinstance(raw_result, dict):
@@ -68,20 +51,98 @@ def _build_bounded_context_items(
         safe_path = path if isinstance(path, str) else str(path)
         safe_content = content if isinstance(content, str) else str(content)
         candidate_items.append({"path": safe_path, "content": safe_content})
+    return candidate_items
 
-        item = {"path": "", "content": ""}
-        if not _truncate_item_value_to_budget(
-            items, item, "path", safe_path, token_budget, encoder
-        ):
-            continue
-        if not _truncate_item_value_to_budget(
-            items, item, "content", safe_content, token_budget, encoder
-        ):
-            continue
-        items.append(item)
 
-    candidate_tokens = _serialized_context_token_count(candidate_items, encoder)
-    return items, candidate_tokens
+def _handoff_payload(
+    task: str,
+    route: dict[str, Any],
+    items: list[dict[str, str]],
+    token_budget: int,
+    candidate_tokens: int,
+    issuance: dict[str, Any] | None,
+    encoder: Any,
+) -> dict[str, Any]:
+    """Build a handoff and stabilize metrics embedded in its own token count."""
+    payload: dict[str, Any] = {
+        "version": "ucr.external_handoff.v1",
+        "task": task,
+        "route": route,
+        "context": {
+            "items": items,
+            "token_count": canonical_token_count(items, encoder),
+            "budget": token_budget,
+        },
+        "metrics": {
+            "candidate_tokens": candidate_tokens,
+            "sent_tokens": 0,
+            "saved_tokens": candidate_tokens,
+        },
+    }
+    if issuance is not None:
+        payload["issuance"] = issuance
+
+    for _ in range(32):
+        sent_tokens = canonical_token_count(payload, encoder)
+        metrics = payload["metrics"]
+        updated = {
+            "candidate_tokens": candidate_tokens,
+            "sent_tokens": sent_tokens,
+            "saved_tokens": max(0, candidate_tokens - sent_tokens),
+        }
+        if metrics == updated:
+            return payload
+        payload["metrics"] = updated
+    raise RuntimeError("gateway payload token metrics did not stabilize")
+
+
+def _candidate_payload_token_count(
+    task: str,
+    route: dict[str, Any],
+    candidate_items: list[dict[str, str]],
+    token_budget: int,
+    issuance: dict[str, Any] | None,
+    encoder: Any,
+) -> int:
+    """Find the fixed-point token count for the complete untrimmed handoff."""
+    candidate_tokens = 0
+    for _ in range(32):
+        payload = _handoff_payload(
+            task,
+            route,
+            candidate_items,
+            token_budget,
+            candidate_tokens,
+            issuance,
+            encoder,
+        )
+        updated = canonical_token_count(payload, encoder)
+        if updated == candidate_tokens:
+            return updated
+        candidate_tokens = updated
+    raise RuntimeError("gateway candidate token metrics did not stabilize")
+
+
+def _fit_value(
+    value: str,
+    *,
+    encoder: Any,
+    fits: Any,
+) -> str:
+    """Return the longest token prefix accepted by the complete-envelope predicate."""
+    source_tokens = len(encoder.encode(value))
+    low = 0
+    high = source_tokens
+    best = ""
+    while low <= high:
+        midpoint = (low + high) // 2
+        candidate, _, _ = truncate_to_token_limit(value, encoder, midpoint)
+        if fits(candidate):
+            best = candidate
+            low = midpoint + 1
+        else:
+            high = midpoint - 1
+    return best
 
 
 def build_external_handoff(
@@ -90,42 +151,89 @@ def build_external_handoff(
     route_result: dict[str, Any],
     search_result: dict[str, Any],
     token_budget: int,
+    issuance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create a secret-safe external handoff with context strictly within its budget."""
+    """Create a secret-safe handoff bounded by its complete canonical payload."""
+    if token_budget <= 0:
+        raise ValueError("token budget must be positive")
     encoder = get_encoder()
-    items, candidate_tokens = _build_bounded_context_items(search_result, token_budget, encoder)
-    sent_tokens = _serialized_context_token_count(items, encoder)
-
+    safe_task = redact_secrets(task)
     route = {
         "intent": redact_secrets(route_result.get("intent", {})),
         "exposure_set": redact_secrets(route_result.get("exposure_set", {})),
         "plan": redact_secrets(route_result.get("plan", {})),
     }
-    return {
-        "version": "ucr.external_handoff.v1",
-        "task": redact_secrets(task),
-        "route": route,
-        "context": {
-            "items": items,
-            "token_count": sent_tokens,
-            "budget": token_budget,
-        },
-        "metrics": {
-            "candidate_tokens": candidate_tokens,
-            "sent_tokens": sent_tokens,
-            "saved_tokens": max(0, candidate_tokens - sent_tokens),
-        },
-    }
+    safe_issuance = redact_secrets(issuance) if issuance is not None else None
+    candidate_items = _candidate_context_items(search_result)
+    candidate_tokens = _candidate_payload_token_count(
+        safe_task,
+        route,
+        candidate_items,
+        token_budget,
+        safe_issuance,
+        encoder,
+    )
+
+    def payload_for(items: list[dict[str, str]]) -> dict[str, Any]:
+        return _handoff_payload(
+            safe_task,
+            route,
+            items,
+            token_budget,
+            candidate_tokens,
+            safe_issuance,
+            encoder,
+        )
+
+    empty_payload = payload_for([])
+    if canonical_token_count(empty_payload, encoder) > token_budget:
+        raise ValueError("gateway token budget is smaller than mandatory handoff fields")
+
+    items: list[dict[str, str]] = []
+    for candidate in candidate_items:
+        full_items = [*items, dict(candidate)]
+        if canonical_token_count(payload_for(full_items), encoder) <= token_budget:
+            items = full_items
+            continue
+
+        item = {"path": "", "content": ""}
+        if canonical_token_count(payload_for([*items, item]), encoder) > token_budget:
+            break
+        item["path"] = _fit_value(
+            candidate["path"],
+            encoder=encoder,
+            fits=lambda value: canonical_token_count(
+                payload_for([*items, {"path": value, "content": ""}]),
+                encoder,
+            )
+            <= token_budget,
+        )
+        item["content"] = _fit_value(
+            candidate["content"],
+            encoder=encoder,
+            fits=lambda value: canonical_token_count(
+                payload_for([*items, {"path": item["path"], "content": value}]),
+                encoder,
+            )
+            <= token_budget,
+        )
+        items.append(item)
+        break
+
+    handoff = payload_for(items)
+    if canonical_token_count(handoff, encoder) > token_budget:
+        raise RuntimeError("gateway payload exceeded its canonical token budget")
+    return handoff
 
 
-def prepare_gateway_request(
+def prepare_gateway_components(
     task: str,
     project_root: str = "",
     token_budget: int = 1200,
     top_k: int = 5,
     registry: ToolRegistry | None = None,
-) -> dict[str, Any]:
-    """Prepare a routing-first, bounded context handoff without calling a provider."""
+) -> tuple[dict[str, Any], dict[str, Any], int]:
+    """Route and search without issuing authority or constructing a handoff."""
     if not task:
         raise ValueError("task must not be empty")
     if token_budget <= 0:
@@ -145,6 +253,24 @@ def prepare_gateway_request(
         if project_root
         else {"results": [], "context_tokens": 0}
     )
+    return route_result, search_result, effective_token_budget
+
+
+def prepare_gateway_request(
+    task: str,
+    project_root: str = "",
+    token_budget: int = 1200,
+    top_k: int = 5,
+    registry: ToolRegistry | None = None,
+) -> dict[str, Any]:
+    """Prepare a routing-first, bounded context handoff without calling a provider."""
+    route_result, search_result, effective_token_budget = prepare_gateway_components(
+        task,
+        project_root=project_root,
+        token_budget=token_budget,
+        top_k=top_k,
+        registry=registry,
+    )
     handoff = build_external_handoff(
         task,
         route_result=route_result,
@@ -154,6 +280,43 @@ def prepare_gateway_request(
     metrics = handoff["metrics"]
     METRICS.record_handoff(metrics["candidate_tokens"], metrics["sent_tokens"])
     return handoff
+
+
+def preflight_gateway_plan(
+    plan: dict[str, Any],
+    arguments_by_tool: dict[str, dict[str, Any]] | None = None,
+    registry: ToolRegistry | None = None,
+    confirmed: bool = False,
+) -> dict[str, Any]:
+    """Evaluate plan safety without executing local or downstream side effects."""
+    active_registry = registry or ToolRegistry()
+    arguments_by_tool = arguments_by_tool or {}
+    results: list[dict[str, Any]] = []
+    for node in plan.get("nodes", []):
+        tool_id = str(node.get("tool_id", ""))
+        descriptor = active_registry.get(tool_id)
+        if descriptor is None:
+            results.append({"status": "not_found", "tool_id": tool_id})
+            continue
+        safety = assess_tool_execution(descriptor, arguments_by_tool.get(tool_id, {}))
+        if safety.decision == SafetyDecision.BLOCK:
+            status = "blocked"
+        elif safety.decision == SafetyDecision.CONFIRM and not confirmed:
+            status = "needs_confirmation"
+        else:
+            status = "approved"
+        results.append(
+            {
+                "status": status,
+                "tool_id": tool_id,
+                "reason": safety.reason,
+                "findings": safety.findings,
+            }
+        )
+    status = "blocked" if any(item["status"] == "blocked" for item in results) else "ok"
+    if any(item["status"] == "needs_confirmation" for item in results):
+        status = "needs_confirmation"
+    return {"version": "ucr.execution_result.v1", "status": status, "results": results}
 
 
 def execute_gateway_plan(

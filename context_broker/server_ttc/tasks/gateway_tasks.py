@@ -62,6 +62,7 @@ def register_gateway_tools(
     @mcp.tool()
     async def execute_gateway_plan(
         plan_json: str,
+        issuance_claim: str,
         arguments_by_tool_json: str = "{}",
         confirmed: bool = False,
         ctx: Context = None,
@@ -72,6 +73,7 @@ def register_gateway_tools(
             arguments_by_tool = _json_loads_object(arguments_by_tool_json)
             result = await active_runtime.execute_gateway_plan(
                 plan,
+                issuance_claim,
                 arguments_by_tool=arguments_by_tool,
                 confirmed=confirmed,
             )
