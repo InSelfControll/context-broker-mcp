@@ -4,12 +4,16 @@ import os
 
 from fastmcp import FastMCP
 
+from context_broker.gateway_ttc.tasks.downstream_tasks import GatewayDownstreamRuntime
 from context_broker.server_ttc.codebase.resources import register_resources_and_prompts
 from context_broker.server_ttc.tasks.agents_tasks import register_agents_tools
 from context_broker.server_ttc.tasks.changelog_tasks import register_changelog_tools
 from context_broker.server_ttc.tasks.context_tasks import register_context_tools
 from context_broker.server_ttc.tasks.docs_tasks import register_docs_tools
-from context_broker.server_ttc.tasks.gateway_tasks import register_gateway_tools
+from context_broker.server_ttc.tasks.gateway_tasks import (
+    create_gateway_lifespan,
+    register_gateway_tools,
+)
 from context_broker.server_ttc.tasks.router_tasks import register_router_tools
 from context_broker.server_ttc.tasks.search_tasks import register_search_tools
 from context_broker.server_ttc.tasks.storage_tasks import register_storage_tools
@@ -18,17 +22,25 @@ from context_broker.server_ttc.tasks.token_tasks import register_token_tools
 _default_server: FastMCP | None = None
 
 
-def create_mcp_server() -> FastMCP:
+def create_mcp_server(
+    *,
+    gateway_runtime: GatewayDownstreamRuntime | None = None,
+) -> FastMCP:
     """Create and configure the MCP server."""
-    mcp = FastMCP("Context Broker - Semantic Code Search")
     if os.environ.get("CONTEXT_BROKER_GATEWAY_MODE", "0").lower() in {
         "1",
         "true",
         "yes",
         "on",
     }:
-        register_gateway_tools(mcp)
+        runtime = gateway_runtime or GatewayDownstreamRuntime()
+        mcp = FastMCP(
+            "Context Broker - Semantic Code Search",
+            lifespan=create_gateway_lifespan(runtime),
+        )
+        register_gateway_tools(mcp, runtime)
         return mcp
+    mcp = FastMCP("Context Broker - Semantic Code Search")
     if os.environ.get("CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY", "0").lower() in {
         "1",
         "true",

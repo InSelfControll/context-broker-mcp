@@ -1283,6 +1283,8 @@ def test_gateway_deployment_docs_preserve_client_contract() -> None:
     required = (
         "CONTEXT_BROKER_GATEWAY_MODE",
         "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET",
+        "CONTEXT_BROKER_AUTO_LOAD_ENV",
+        "CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH",
         "prepare_gateway_request",
         "execute_gateway_plan",
         "get_gateway_status",
@@ -1291,9 +1293,12 @@ def test_gateway_deployment_docs_preserve_client_contract() -> None:
         content = (REPOSITORY_ROOT / document).read_text()
         for value in required:
             assert value in content
+        assert '"CONTEXT_BROKER_GATEWAY_MODE": "1"' in content
+        assert '"CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200"' in content
+        assert '"CONTEXT_BROKER_AUTO_LOAD_ENV": "0"' in content
         assert "Register only" in content
         assert "Context Broker with the client" in content
-        assert "bypass" in content
+        assert "Direct downstream MCP registration bypasses the gateway" in content
 
 
 def test_agents_gateway_rule_requires_handoff_before_external_llm() -> None:
@@ -1304,3 +1309,4 @@ def test_agents_gateway_rule_requires_handoff_before_external_llm() -> None:
     )[0]
     assert "prepare_gateway_request" in gateway_rules
     assert "external LLM" in gateway_rules
+    assert "only the returned handoff" in gateway_rules

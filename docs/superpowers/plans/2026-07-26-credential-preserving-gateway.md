@@ -17,6 +17,8 @@
 - Direct client registration of downstream MCP servers bypasses the gateway and remains unsupported.
 - Existing non-gateway behavior must remain backward-compatible.
 - Preserve unrelated working-tree changes, especially existing router and indexer edits.
+- Downstream credentials are resolved only from injected environment references and never
+  emitted in handoffs, status responses, logs, or persisted registry descriptors.
 
 ---
 
@@ -320,7 +322,73 @@ git commit -m "docs: require gateway-first client integration"
 
 ---
 
-### Task 5: Final verification and changelog health
+### Task 5: Wire configured downstream MCP servers into the gateway
+
+**Approved scope amendment:** The user selected real downstream registration/configuration
+after Task 4 review proved that documentation alone would promise an unavailable integration.
+
+**Files:**
+- Create: `context_broker/gateway_ttc/tools/downstream_config_tools.py`
+- Create: `context_broker/gateway_ttc/tasks/downstream_tasks.py`
+- Modify: `context_broker/config.py`
+- Modify: `context_broker/gateway_ttc/tasks/gateway_tasks.py`
+- Modify: `context_broker/server_ttc/tasks/gateway_tasks.py`
+- Test: `tests/test_gateway_downstreams.py`
+- Modify: `README.md`
+- Modify: `Usage.md`
+- Modify: `tests/test_integrations.py`
+
+**Interfaces and exact contracts:**
+- Add `CONTEXT_BROKER_DOWNSTREAM_CONFIG_PATH`, an optional path to a JSON document with
+  version `ucr.gateway_downstreams.v1` and a top-level `servers` array.
+- Each server uses the existing `DownstreamServerConfig` fields. Values inside `env` and
+  `headers` must be injected-environment references in `${VARIABLE_NAME}` form; reject
+  literal values so credentials are not stored in the config file.
+- Reject `.env` files as downstream configuration inputs.
+- Lazily load and validate the config on the first gateway request, discover configured
+  server capabilities through `DownstreamConnectionManager`, and ingest discovered tools
+  into a gateway-owned `ToolRegistry` alongside the default Context Broker descriptors.
+- `prepare_gateway_request` routes against that combined registry.
+- The registered `execute_gateway_plan` MCP handler must run the existing safety gate first,
+  preserve confirmation requirements, and execute only `delegated` downstream results
+  through the managed connection matching the selected descriptor.
+- Redact downstream results and errors before returning them.
+- Extend `ucr.gateway_status.v1` only with secret-free downstream names/states/counts.
+- Keep the public FastMCP surface exactly `prepare_gateway_request`,
+  `execute_gateway_plan`, and `get_gateway_status`.
+
+- [ ] **Step 1: Write failing configuration and runtime tests**
+
+Cover schema/version validation, `.env` rejection, environment-reference expansion,
+secret-free public/status data, capability ingestion, combined-registry routing,
+confirmation-before-call, successful downstream execution, and failure redaction.
+
+- [ ] **Step 2: Run focused tests and verify RED**
+
+Run: `uv run pytest tests/test_gateway_downstreams.py -q`
+
+Expected: FAIL because config loading and gateway runtime wiring do not exist.
+
+- [ ] **Step 3: Implement the downstream gateway runtime**
+
+Reuse the existing downstream connection manager and registry ingestion APIs. Do not add a
+fourth public MCP tool, provider SDK, provider credential field, or client-side interception
+claim.
+
+- [ ] **Step 4: Correct the deployment documentation**
+
+Document the exact JSON file format, injected environment references, global client
+configuration, startup/lazy-discovery behavior, failure/status behavior, and the requirement
+that clients register only Context Broker.
+
+- [ ] **Step 5: Verify and commit**
+
+Run the focused downstream/gateway/router/integration tests, scoped Ruff, and the full suite.
+Commit with subject: `feat: wire gateway downstream MCP servers`.
+
+---
+
+### Task 6: Final verification and changelog health
 
 **Files:**
 - Modify if required by project tooling: `CHANGELOG.md`
