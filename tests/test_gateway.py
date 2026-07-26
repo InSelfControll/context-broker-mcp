@@ -7,7 +7,11 @@ import json
 import pytest
 
 from context_broker.gateway_ttc.tasks import gateway_tasks
-from context_broker.gateway_ttc.tasks.gateway_tasks import build_external_handoff
+from context_broker.gateway_ttc.tasks.gateway_tasks import (
+    build_external_handoff,
+    get_gateway_status,
+)
+from context_broker.indexer_ttc.tools.model_tools import get_encoder
 
 
 def test_build_external_handoff_redacts_and_bounds_context() -> None:
@@ -36,6 +40,78 @@ def test_build_external_handoff_redacts_and_bounds_context() -> None:
     assert handoff["context"]["token_count"] <= 20
     assert "super-secret" not in json.dumps(handoff)
     assert handoff["metrics"]["saved_tokens"] > 0
+
+
+def test_build_external_handoff_bounds_serialized_allowlisted_context() -> None:
+    """Prevent paths or metadata from bypassing the serialized context token budget."""
+    handoff = build_external_handoff(
+        "inspect result",
+        route_result={"intent": {}, "exposure_set": {}, "plan": {}},
+        search_result={
+            "results": [
+                {
+                    "path": "nested/" + "long-path/" * 200,
+                    "content": "useful context " * 50,
+                    "metadata": "oversized metadata " * 200,
+                }
+            ]
+        },
+        token_budget=20,
+    )
+
+    items = handoff["context"]["items"]
+    serialized_tokens = len(get_encoder().encode(json.dumps(items)))
+
+    assert items
+    assert set(items[0]) == {"path", "content"}
+    assert "oversized metadata" not in json.dumps(items)
+    assert serialized_tokens <= 20
+    assert handoff["context"]["token_count"] == serialized_tokens
+
+
+def test_prepare_gateway_request_caps_budget_to_current_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Prevent callers from requesting more context than the configured gateway limit."""
+    routed_budgets: list[int] = []
+
+    def route(task: str, **kwargs: object) -> dict[str, object]:
+        routed_budgets.append(int(kwargs["token_budget"]))
+        return {"intent": {}, "exposure_set": {}, "plan": {"nodes": []}}
+
+    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET", "7")
+    monkeypatch.setattr(gateway_tasks, "route_task", route)
+
+    handoff = gateway_tasks.prepare_gateway_request("inspect project", token_budget=100)
+
+    assert routed_budgets == [7]
+    assert handoff["context"]["budget"] == 7
+
+
+def test_gateway_status_accumulates_prepared_handoff_metrics(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Report cumulative token reduction only after a handoff has been prepared."""
+    before = get_gateway_status()["metrics"]
+
+    def route(task: str, **kwargs: object) -> dict[str, object]:
+        return {"intent": {}, "exposure_set": {}, "plan": {"nodes": []}}
+
+    def search(task: str, project_root: str, top_k: int) -> dict[str, object]:
+        return {"result": {"results": [{"path": "app.py", "content": "word " * 50}]}}
+
+    monkeypatch.setattr(gateway_tasks, "route_task", route)
+    monkeypatch.setattr(gateway_tasks, "search_context", search)
+
+    handoff = gateway_tasks.prepare_gateway_request(
+        "inspect project", project_root="/workspace", token_budget=5
+    )
+    after = get_gateway_status()["metrics"]
+
+    assert after["prepared_requests"] == before["prepared_requests"] + 1
+    assert after["candidate_tokens"] == before["candidate_tokens"] + handoff["metrics"]["candidate_tokens"]
+    assert after["sent_tokens"] == before["sent_tokens"] + handoff["metrics"]["sent_tokens"]
+    assert after["saved_tokens"] == after["candidate_tokens"] - after["sent_tokens"]
 
 
 def test_prepare_gateway_request_routes_before_retrieval_and_skips_empty_project(
