@@ -415,27 +415,33 @@ The downstream path must point to a JSON document, never a `.env` file:
 }
 ```
 
-Every `env` and `headers` value must be a `${VARIABLE_NAME}` reference. Inject the
-referenced variables into the Context Broker process with the client host or a secret
-manager. Literal values are rejected, and resolved values are kept only in memory: they are
-not logged, persisted in the tool registry, or returned in handoffs, execution results,
-errors, or status responses. Do not put credentials in `command`, `args`, or `url`.
+Every server and discovered tool name must be a canonical 1–64 character identifier made
+from letters, digits, underscores, or hyphens. Every `env` and `headers` value must be a
+`${VARIABLE_NAME}` reference. Inject the referenced variables into the Context Broker
+process with the client host or a secret manager. Literal values are rejected, and resolved
+values are kept only in memory: they are not logged, persisted in the tool registry, or
+returned in handoffs, execution results, errors, or status responses. Configuration
+symlinks, URL userinfo or credential query parameters, and credential-bearing command
+arguments are rejected; keep all credentials in referenced `env` or `headers` fields.
 
 Configuration loading and capability discovery are lazy: the first gateway request loads
 the document, validates all servers, opens managed MCP sessions, and adds discovered tools
 to the gateway's registry alongside Context Broker's built-in descriptors. The same manager
 and registry are reused for later requests and are closed when the FastMCP server shuts down.
 An invalid document fails before routing or execution. An unreachable server is omitted from
-routing, appears with a failed state in `get_gateway_status`, and can reconnect on a later
-approved execution according to its configured retry policy. Status exposes only server
-names, connection states, and capability counts.
+routing, appears with a failed state in `get_gateway_status`, and is retried on the next
+gateway request, including a status request, according to its configured retry policy.
+Discovery payloads and exception details are discarded after safe descriptors and counts are
+derived. Status exposes only server names, connection states, and capability counts.
 
 Your client or skill calls `prepare_gateway_request` before an external LLM handoff and
 forwards only the returned `ucr.external_handoff.v1` payload. Context Broker does not call
 an external LLM and never receives, persists, or uses provider credentials; the client or
 skill owns provider selection, credentials, and the provider call. Use
-`execute_gateway_plan` only for the policy-checked plan returned by the handoff, and use
-`get_gateway_status` to inspect active limits, downstream state, and gateway metrics.
+`execute_gateway_plan` only for the policy-checked plan returned by the handoff. Execution
+rejects plans whose version, server, risk, or capability metadata no longer matches the live
+registry descriptor. Use `get_gateway_status` to inspect active limits, downstream state, and
+gateway metrics.
 
 ### Example Queries
 

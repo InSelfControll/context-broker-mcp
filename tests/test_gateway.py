@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -65,12 +66,30 @@ async def test_gateway_execute_tool_parses_json_and_requires_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Keep the public FastMCP gateway execution path behind confirmation."""
+    from context_broker.gateway_ttc.tasks import downstream_tasks
+
+    async def run_sync(function: Any) -> Any:
+        return function()
+
+    monkeypatch.setattr(downstream_tasks.to_thread, "run_sync", run_sync)
     monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_MODE", "1")
     server = create_mcp_server()
     plan_json = json.dumps(
         {
             "version": "ucr.plan.v1",
-            "nodes": [{"id": "n1", "tool_id": "ensure_changelog_tool"}],
+            "nodes": [
+                {
+                    "id": "n1",
+                    "tool_id": "ensure_changelog_tool",
+                    "server": "context-broker",
+                    "risk_level": "medium",
+                    "capabilities": {
+                        "file": True,
+                        "network": False,
+                        "shell": False,
+                    },
+                }
+            ],
         }
     )
     arguments_by_tool_json = json.dumps(

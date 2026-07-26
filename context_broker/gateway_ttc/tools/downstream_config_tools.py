@@ -7,14 +7,37 @@ import os
 from pathlib import Path
 import re
 from typing import Any, Mapping
+from urllib.parse import parse_qsl, urlsplit
 
 from context_broker.client_ttc.tools.contract_tools import (
     DownstreamServerConfig,
     DownstreamTransport,
+    validate_downstream_identity,
 )
 
 _CONFIG_VERSION = "ucr.gateway_downstreams.v1"
 _ENV_REFERENCE_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
+_OBVIOUS_SECRET_RE = re.compile(
+    r"(?i)(?:\bbearer\s+\S+|(?:sk|gh[pousr]|glpat|xox[baprs])[-_][A-Za-z0-9_-]{8,})"
+)
+_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    r"(?i)(?:api[-_]?key|access[-_]?key|access[-_]?token|auth(?:orization)?|"
+    r"client[-_]?secret|credential|password|secret|token)\s*[:=]\s*\S+"
+)
+_SENSITIVE_ARGUMENT_NAMES = {
+    "access-key",
+    "access-token",
+    "api-key",
+    "auth",
+    "auth-token",
+    "authorization",
+    "client-secret",
+    "credential",
+    "credentials",
+    "password",
+    "secret",
+    "token",
+}
 _SERVER_FIELDS = {
     "name",
     "transport",
@@ -48,6 +71,59 @@ def _require_string_list(payload: dict[str, Any], key: str) -> list[str]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise ValueError(f"downstream server {key} must be an array of strings")
     return list(value)
+
+
+def _normalized_option_name(value: str) -> str:
+    """Normalize a URL query key or command option for sensitive-name checks."""
+    return value.lstrip("-").split("=", 1)[0].replace("_", "-").lower()
+
+
+def _is_sensitive_name(value: str) -> bool:
+    """Return whether a field name is conventionally credential-bearing."""
+    normalized = _normalized_option_name(value)
+    compact = normalized.replace("-", "")
+    sensitive_compact = {
+        name.replace("-", "") for name in _SENSITIVE_ARGUMENT_NAMES
+    }
+    return (
+        normalized in _SENSITIVE_ARGUMENT_NAMES
+        or compact in sensitive_compact
+        or any(normalized.endswith(f"-{name}") for name in _SENSITIVE_ARGUMENT_NAMES)
+    )
+
+
+def _validate_credential_free_url(url: str | None) -> None:
+    """Reject URL locations that embed credentials instead of using headers."""
+    if url is None:
+        return
+    try:
+        parsed = urlsplit(url)
+        username = parsed.username
+        password = parsed.password
+    except ValueError:
+        raise ValueError("downstream server url is invalid") from None
+    if username is not None or password is not None:
+        raise ValueError("downstream server url must not contain userinfo credentials")
+    if any(
+        _is_sensitive_name(name)
+        for name, _value in parse_qsl(parsed.query, keep_blank_values=True)
+    ):
+        raise ValueError("downstream server url must not contain credential query parameters")
+    if _OBVIOUS_SECRET_RE.search(url):
+        raise ValueError("downstream server url must not contain an inline credential")
+
+
+def _validate_credential_free_arguments(arguments: list[str]) -> None:
+    """Reject argv entries that conventionally carry inline credentials."""
+    for argument in arguments:
+        if (
+            _is_sensitive_name(argument)
+            or _OBVIOUS_SECRET_RE.search(argument)
+            or _CREDENTIAL_ASSIGNMENT_RE.search(argument)
+        ):
+            raise ValueError(
+                "downstream server args must not contain credential flags or values"
+            )
 
 
 def _require_float(
@@ -124,6 +200,7 @@ def _build_server_config(
     name = payload.get("name")
     if not isinstance(name, str) or not name.strip():
         raise ValueError("downstream server name is required")
+    validate_downstream_identity(name, kind="server name")
     raw_transport = payload.get("transport")
     if not isinstance(raw_transport, str):
         raise ValueError("downstream server transport is required")
@@ -134,13 +211,19 @@ def _build_server_config(
             "downstream server transport must be one of: stdio, http, sse"
         ) from None
 
+    command = _require_optional_string(payload, "command")
+    args = _require_string_list(payload, "args")
+    url = _require_optional_string(payload, "url")
+    _validate_credential_free_arguments(args)
+    _validate_credential_free_url(url)
+
     config = DownstreamServerConfig(
         name=name,
         transport=transport,
-        command=_require_optional_string(payload, "command"),
-        args=_require_string_list(payload, "args"),
+        command=command,
+        args=args,
         env=_resolve_reference_map(payload, "env", environ),
-        url=_require_optional_string(payload, "url"),
+        url=url,
         headers=_resolve_reference_map(payload, "headers", environ),
         timeout_seconds=_require_float(
             payload,
@@ -178,6 +261,8 @@ def load_downstream_server_configs(
 ) -> list[DownstreamServerConfig]:
     """Load and validate downstream configs without accepting persisted secrets."""
     path = Path(config_path)
+    if path.is_symlink():
+        raise ValueError("symlink downstream configuration paths are not allowed")
     if _is_env_file(path):
         raise ValueError(".env files cannot be used as downstream configuration")
 

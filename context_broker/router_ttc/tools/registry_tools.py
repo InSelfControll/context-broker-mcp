@@ -11,7 +11,10 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Iterable
 
-from context_broker.client_ttc.tools.contract_tools import DownstreamCapabilities
+from context_broker.client_ttc.tools.contract_tools import (
+    DownstreamCapabilities,
+    validate_downstream_identity,
+)
 from context_broker.config import CACHE_DIR
 from context_broker.utils import log
 
@@ -181,15 +184,36 @@ class ToolRegistry:
             self._vectors[descriptor.id] = _vectorize(descriptor.searchable_text())
         self.save_cache()
 
-    def ingest_downstream_capabilities(self, capabilities: DownstreamCapabilities | dict[str, Any]) -> None:
+    def ingest_downstream_capabilities(
+        self,
+        capabilities: DownstreamCapabilities | dict[str, Any],
+    ) -> None:
         """Register downstream MCP tools discovered by the client subsystem."""
-        payload = capabilities.to_dict() if isinstance(capabilities, DownstreamCapabilities) else capabilities
+        payload = (
+            capabilities.to_dict()
+            if isinstance(capabilities, DownstreamCapabilities)
+            else capabilities
+        )
         server = str(payload.get("server", "downstream"))
-        descriptors = [
-            ToolDescriptor.from_downstream_tool(server, tool)
-            for tool in payload.get("tools", [])
-            if tool.get("name")
-        ]
+        validate_downstream_identity(server, kind="server name")
+        descriptors: list[ToolDescriptor] = []
+        discovered_ids: set[str] = set()
+        for tool in payload.get("tools", []):
+            name = str(tool.get("name", ""))
+            if not name:
+                continue
+            validate_downstream_identity(name, kind="tool name")
+            descriptor = ToolDescriptor.from_downstream_tool(server, tool)
+            if descriptor.id in discovered_ids:
+                raise ValueError(
+                    f"duplicate downstream tool identity for server {server}"
+                )
+            if descriptor.id in self._tools:
+                raise ValueError(
+                    f"downstream tool identity collision for server {server}"
+                )
+            discovered_ids.add(descriptor.id)
+            descriptors.append(descriptor)
         self.register_many(descriptors)
 
     def get(self, tool_id: str) -> ToolDescriptor | None:

@@ -4,7 +4,20 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+import re
 from typing import Any
+
+_DOWNSTREAM_IDENTITY_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
+def validate_downstream_identity(value: str, *, kind: str) -> str:
+    """Return a canonical server or tool name, rejecting ambiguous identifiers."""
+    if not _DOWNSTREAM_IDENTITY_RE.fullmatch(value):
+        raise ValueError(
+            f"downstream {kind} must use a canonical 1-64 character "
+            "alphanumeric, underscore, or hyphen identity"
+        )
+    return value
 
 
 class DownstreamTransport(StrEnum):
