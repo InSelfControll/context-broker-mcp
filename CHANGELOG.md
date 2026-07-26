@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- 🐛 ignore changelog-only history entries — `e4b7c6d`
 - 🐛 bind gateway execution to issued plans — `13be2b5`
 - 🐛 harden gateway downstream boundaries — `21c1ec4`
 - 🐛 enforce gateway handoff budgets — `d1489fb`
