@@ -184,6 +184,27 @@ def parse_git_commits(
     return commits
 
 
+def _changes_only_changelog(commit_hash: str, cwd: str) -> bool:
+    """Return whether a commit changes only the root CHANGELOG.md file."""
+    output = _run_git(
+        [
+            "diff-tree",
+            "--root",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            commit_hash,
+        ],
+        cwd=cwd,
+    )
+    changed_paths = {
+        path.removeprefix("./")
+        for path in output.splitlines()
+        if path.strip()
+    }
+    return changed_paths == {"CHANGELOG.md"}
+
+
 def categorize_commits(commits: list[ParsedCommit]) -> dict[str, list[ParsedCommit]]:
     """Group commits by their changelog category.
 
@@ -376,7 +397,12 @@ def validate_changelog(changelog_path: str | Path) -> dict[str, str | bool]:
     commits = parse_git_commits(since=since, cwd=str(path.parent))
 
     # Filter out merges and already-documented commits
-    undocumented = [c for c in commits if not c.is_merge or c.pr_number]
+    undocumented = [
+        commit
+        for commit in commits
+        if (not commit.is_merge or commit.pr_number)
+        and not _changes_only_changelog(commit.hash, str(path.parent))
+    ]
 
     if not undocumented:
         return {
