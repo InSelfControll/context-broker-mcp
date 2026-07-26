@@ -10,27 +10,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- 🐛 bind gateway execution to issued plans — `13be2b5`
 - 🐛 harden gateway downstream boundaries — `21c1ec4`
+- 🐛 enforce gateway handoff budgets — `d1489fb`
+- 🐛 allow harnesses to skip dotenv loading — `7e29ea5`
 
-## [Unreleased] — 2026-07-26
+### Documentation
+
+- 📝 record credential-preserving gateway — `94a9fd7`
+- 📝 require gateway-first client integration — `6755c9a`
+- 📝 plan credential-preserving gateway — `060968e`
+- 📝 specify credential-preserving gateway — `189b6c1`
+- 📝 record model bootstrap refinement — `a5f6a00`
 
 ### Added
 
 - ✨ wire gateway downstream MCP servers — `184b596`
 - ✨ add restricted gateway MCP surface — `74e28e7`
 - ✨ add bounded external handoff gateway — `6f2971e`
-
-### Fixed
-
-- 🐛 enforce gateway handoff budgets — `d1489fb`
-- 🐛 allow harnesses to skip dotenv loading — `7e29ea5`
-
-### Documentation
-
-- 📝 require gateway-first client integration — `6755c9a`
-- 📝 plan credential-preserving gateway — `060968e`
-- 📝 specify credential-preserving gateway — `189b6c1`
-- 📝 record model bootstrap refinement — `a5f6a00`
 
 ### Testing
 
@@ -51,7 +48,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
-- 📝 record model bootstrap refinement — `a5f6a00`
 - 📝 update changelog — `4493a54`
 - 📝 explain embedding model bootstrap — `daf2d21`
 - 📝 plan automatic model bootstrap — `c42c60f`
