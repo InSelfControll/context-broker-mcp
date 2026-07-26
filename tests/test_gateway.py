@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from fastmcp import Client
 
 from context_broker.gateway_ttc.tasks import gateway_tasks
 from context_broker.gateway_ttc.tasks.gateway_tasks import (
@@ -12,6 +13,37 @@ from context_broker.gateway_ttc.tasks.gateway_tasks import (
     get_gateway_status,
 )
 from context_broker.indexer_ttc.tools.model_tools import get_encoder
+from context_broker.server_ttc.codebase.assembly import create_mcp_server
+
+
+@pytest.mark.anyio
+async def test_gateway_mode_exposes_only_gateway_tools(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent gateway mode from exposing legacy MCP capabilities."""
+    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_MODE", "1")
+    server = create_mcp_server()
+
+    async with Client(server) as client:
+        tools = await client.list_tools()
+
+    assert {tool.name for tool in tools} == {
+        "prepare_gateway_request",
+        "execute_gateway_plan",
+        "get_gateway_status",
+    }
+
+
+@pytest.mark.anyio
+async def test_default_mode_keeps_representative_legacy_tools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep established MCP tools available when gateway mode is not enabled."""
+    monkeypatch.delenv("CONTEXT_BROKER_GATEWAY_MODE", raising=False)
+    server = create_mcp_server()
+
+    async with Client(server) as client:
+        tool_names = {tool.name for tool in await client.list_tools()}
+
+    assert {"search_codebase_tool", "route_task", "save_search_results"} <= tool_names
 
 
 def test_build_external_handoff_redacts_and_bounds_context() -> None:
