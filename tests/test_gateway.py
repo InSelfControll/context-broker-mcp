@@ -36,11 +36,12 @@ async def test_gateway_mode_exposes_only_gateway_tools(monkeypatch: pytest.Monke
 
 
 @pytest.mark.anyio
-async def test_gateway_status_tool_returns_only_numeric_metrics(
+async def test_gateway_status_tool_returns_configured_safe_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Keep the FastMCP status surface free of prepared handoff payloads."""
+    """Keep the FastMCP status surface configured and free of handoff payloads."""
     monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_MODE", "1")
+    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET", "37")
     server = create_mcp_server()
 
     async with Client(server) as client:
@@ -48,6 +49,8 @@ async def test_gateway_status_tool_returns_only_numeric_metrics(
 
     payload = json.loads(str(result.data))
     assert payload["version"] == "ucr.gateway_status.v1"
+    assert payload["enabled"] is True
+    assert payload["default_token_budget"] == 37
     assert set(payload["metrics"]) == {
         "prepared_requests",
         "candidate_tokens",
@@ -55,6 +58,50 @@ async def test_gateway_status_tool_returns_only_numeric_metrics(
         "saved_tokens",
     }
     assert all(isinstance(value, int) for value in payload["metrics"].values())
+
+
+@pytest.mark.anyio
+async def test_gateway_execute_tool_parses_json_and_requires_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the public FastMCP gateway execution path behind confirmation."""
+    monkeypatch.setenv("CONTEXT_BROKER_GATEWAY_MODE", "1")
+    server = create_mcp_server()
+    plan_json = json.dumps(
+        {
+            "version": "ucr.plan.v1",
+            "nodes": [{"id": "n1", "tool_id": "ensure_changelog_tool"}],
+        }
+    )
+    arguments_by_tool_json = json.dumps(
+        {"ensure_changelog_tool": {"project_root": "/tmp/gateway-confirmation"}}
+    )
+
+    async with Client(server) as client:
+        unconfirmed = await client.call_tool(
+            "execute_gateway_plan",
+            {
+                "plan_json": plan_json,
+                "arguments_by_tool_json": arguments_by_tool_json,
+            },
+        )
+        confirmed = await client.call_tool(
+            "execute_gateway_plan",
+            {
+                "plan_json": plan_json,
+                "arguments_by_tool_json": arguments_by_tool_json,
+                "confirmed": True,
+            },
+        )
+
+    unconfirmed_payload = json.loads(str(unconfirmed.data))
+    confirmed_payload = json.loads(str(confirmed.data))
+    assert unconfirmed_payload["version"] == "ucr.execution_result.v1"
+    assert unconfirmed_payload["status"] == "needs_confirmation"
+    assert unconfirmed_payload["results"][0]["status"] == "needs_confirmation"
+    assert confirmed_payload["version"] == "ucr.execution_result.v1"
+    assert confirmed_payload["status"] == "ok"
+    assert confirmed_payload["results"][0]["status"] == "delegated"
 
 
 @pytest.mark.anyio
