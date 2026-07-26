@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] — 2026-07-26
 
+### Fixed
+
+- 🐛 harden gateway downstream boundaries — `21c1ec4`
+
+## [Unreleased] — 2026-07-26
+
 ### Added
 
 - ✨ wire gateway downstream MCP servers — `184b596`
