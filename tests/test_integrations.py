@@ -14,6 +14,9 @@ from context_broker.dashboard_ttc.tasks import data_tasks
 from context_broker.indexer_ttc.tools import cache_tools, state
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
 # ---------------------------------------------------------------------------
 # Fake Redis (string/set/hash/list) — enough for the context backend's needs.
 # ---------------------------------------------------------------------------
@@ -1273,3 +1276,31 @@ def test_templates_render_with_empty_collections() -> None:
     assert "No messages" in templates.render_messages_page(empty_session, backend="redis")
     # JSON round-trip sanity
     json.dumps(empty_session)
+
+
+def test_gateway_deployment_docs_preserve_client_contract() -> None:
+    """Gateway docs must keep the client registration and handoff boundary explicit."""
+    required = (
+        "CONTEXT_BROKER_GATEWAY_MODE",
+        "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET",
+        "prepare_gateway_request",
+        "execute_gateway_plan",
+        "get_gateway_status",
+    )
+    for document in ("README.md", "Usage.md"):
+        content = (REPOSITORY_ROOT / document).read_text()
+        for value in required:
+            assert value in content
+        assert "Register only" in content
+        assert "Context Broker with the client" in content
+        assert "bypass" in content
+
+
+def test_agents_gateway_rule_requires_handoff_before_external_llm() -> None:
+    """Skills must request a handoff before they invoke an external LLM."""
+    content = (REPOSITORY_ROOT / "AGENTS.md").read_text()
+    gateway_rules = content.split("<!-- context-broker-gateway:start -->", 1)[1].split(
+        "<!-- context-broker-gateway:end -->", 1
+    )[0]
+    assert "prepare_gateway_request" in gateway_rules
+    assert "external LLM" in gateway_rules

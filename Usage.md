@@ -87,6 +87,8 @@ before a one-time bootstrap download. Explicit `HF_HUB_OFFLINE=1` or
 | `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` | Explicit override for the resolved user peer id | *(empty)* | Any name; sanitized to alnum/`-_.` |
 | `CONTEXT_BROKER_DASHBOARD_HOST` | Bind host for the web dashboard | `127.0.0.1` | Any host |
 | `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web dashboard | `8770` | Any free port |
+| `CONTEXT_BROKER_GATEWAY_MODE` | Expose only the credential-preserving gateway tools | `0` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET` | Maximum token budget for an external handoff | `1200` | Any positive integer |
 
 By default, Context Broker uses half of available CPU cores for indexing/search workloads.
 
@@ -196,6 +198,41 @@ Add to your Kimi CLI configuration:
   }
 }
 ```
+
+### Credential-Preserving Gateway
+
+Gateway mode gives a client session one MCP entry point: Context Broker. It exposes only
+`prepare_gateway_request`, `execute_gateway_plan`, and `get_gateway_status`. Register only
+Context Broker with the client, then configure Context7, GitHub, filesystem, memory, and
+other MCPs as Context Broker downstream servers.
+
+Use the following client-neutral server configuration:
+
+```json
+{
+  "mcpServers": {
+    "context-broker": {
+      "command": "uv",
+      "args": ["run", "python", "/path/to/context-broker/context-broker.py"],
+      "env": {
+        "CONTEXT_BROKER_GATEWAY_MODE": "1",
+        "CONTEXT_BROKER_GATEWAY_TOKEN_BUDGET": "1200",
+        "CONTEXT_BROKER_AUTO_LOAD_ENV": "0"
+      }
+    }
+  }
+}
+```
+
+Before you invoke an external LLM, your client or skill calls `prepare_gateway_request` and
+forwards only the returned `ucr.external_handoff.v1` payload. Context Broker never calls an
+external LLM and never receives, persists, or uses provider credentials. Your client or
+skill keeps provider selection, credentials, and the provider call. If execution is needed,
+call `execute_gateway_plan` only with the policy-checked plan from the handoff; call
+`get_gateway_status` to inspect the active configuration and gateway metrics.
+
+Context Broker can enforce this boundary only for requests it receives. Direct downstream
+MCP registration bypasses the gateway and is unsupported for gateway-mode clients.
 
 ---
 

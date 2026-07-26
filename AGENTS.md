@@ -1,5 +1,16 @@
 # Agent Instructions
 
+<!-- context-broker-gateway:start -->
+# Credential-Preserving Gateway
+
+When `CONTEXT_BROKER_GATEWAY_MODE=1`, every skill or agent that needs context for an
+external LLM calls `prepare_gateway_request` first and forwards only the returned handoff.
+The client or skill, not Context Broker, invokes the external LLM and owns its provider
+credentials. Use `execute_gateway_plan` only for the returned policy-checked plan; use
+`get_gateway_status` to inspect gateway configuration and metrics. Do not directly register
+downstream MCPs with a gateway-mode client: they bypass Context Broker enforcement.
+<!-- context-broker-gateway:end -->
+
 ## Project: context-broker
 
 ## Project Goals
