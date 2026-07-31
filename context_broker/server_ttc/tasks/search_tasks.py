@@ -4,7 +4,7 @@ Search-related MCP tool handlers.
 
 from fastmcp import Context, FastMCP
 
-from context_broker.indexer import search_codebase
+from context_broker.indexer import literal_search, search_codebase
 from context_broker.lifecycle import tracked_activity
 from context_broker.project import resolve_project_root
 from context_broker.server_ttc.tools.helpers import (
@@ -130,6 +130,80 @@ def register_search_tools(mcp: FastMCP) -> None:
                 return "\n".join(lines)
             except Exception as e:
                 error_msg = f"❌ Auto-search error: {e}"
+                log(error_msg, "ERROR")
+                await notify_error(ctx, error_msg)
+                return f"Error: {str(e)}"
+
+    @mcp.tool()
+    async def find_in_codebase(
+        pattern: str,
+        project_root: str = "",
+        case_sensitive: bool = False,
+        use_regex: bool = False,
+        file_glob: str = "",
+        ctx: Context = None,
+    ) -> str:
+        """Find exact literal or regex pattern matches in the codebase.
+
+        Runs entirely locally — no embedding model, no external LLM call.
+        Returns file paths, line numbers, and context snippets for each match.
+        Use this instead of search_codebase_tool when you need precise text
+        matches (e.g. "session_id", "def authenticate", a specific import).
+        """
+        with tracked_activity():
+            root_display = project_root if project_root else "[auto-detected]"
+            log(
+                f"🔎 find_in_codebase called: pattern='{pattern[:50]}...', "
+                f"root='{root_display}', regex={use_regex}"
+            )
+            await progress(ctx, f"🔎 Searching for: '{pattern[:60]}'")
+
+            root = resolve_project_root(project_root)
+            try:
+                result = literal_search(
+                    pattern,
+                    root,
+                    case_sensitive=case_sensitive,
+                    use_regex=use_regex,
+                    file_glob=file_glob,
+                )
+
+                if result["total_matches"] == 0:
+                    msg = f"❌ No matches found for '{pattern}' in {result['files_searched']} files."
+                    await progress(ctx, msg)
+                    return msg
+
+                await progress(
+                    ctx,
+                    f"✅ Found {result['total_matches']} matches in "
+                    f"{result['files_with_matches']} files",
+                )
+
+                lines = [
+                    f"🔎 Literal Search Results for: '{pattern}'",
+                    f"📁 Project: {result['project']}",
+                    f"📂 Project Root: {result['project_root']}",
+                    f"📊 {result['total_matches']} matches in "
+                    f"{result['files_with_matches']}/{result['files_searched']} files",
+                    f"🔧 Mode: {'regex' if use_regex else 'literal'}"
+                    f"{', case-sensitive' if case_sensitive else ', case-insensitive'}",
+                    "",
+                    "=" * 60,
+                    "",
+                ]
+
+                for file_result in result["results"]:
+                    lines.append(f"### {file_result['relative_path']} ({file_result['match_count']} match(es))")
+                    for m in file_result["matches"]:
+                        lines.append(f"  L{m['line']}: {m['snippet']}")
+                    lines.append("")
+
+                if result["truncated"]:
+                    lines.append("⚠️ Results truncated — use a narrower pattern or file_glob to see more.")
+
+                return "\n".join(lines)
+            except Exception as e:
+                error_msg = f"❌ Literal search error: {e}"
                 log(error_msg, "ERROR")
                 await notify_error(ctx, error_msg)
                 return f"Error: {str(e)}"

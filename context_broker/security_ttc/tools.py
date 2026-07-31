@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import fnmatch
 import os
-from pathlib import Path
 
 from context_broker.config import SECRET_ENV_KEY_PATTERNS, SECRET_FILE_PATTERNS
 from context_broker.utils import log

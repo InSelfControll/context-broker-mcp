@@ -61,6 +61,11 @@ pip install -e .
 
 ### Environment Variables
 
+Embedding models download automatically on first use. With
+`CONTEXT_BROKER_LOCAL_ONLY=1`, Context Broker tries the cache first and announces the exact model
+before a one-time bootstrap download. Explicit `HF_HUB_OFFLINE=1` or
+`TRANSFORMERS_OFFLINE=1` settings still disable downloads.
+
 | Variable | Description | Default | Options |
 |----------|-------------|---------|---------|
 | `CONTEXT_BROKER_PROJECT_ROOT` | Default project root path | Auto-detected from CWD | Any valid path |
@@ -68,7 +73,7 @@ pip install -e .
 | `CONTEXT_BROKER_STORAGE_MODE` | Storage mode | `both` | `global`, `in-project`, `both` |
 | `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` | Any valid path |
 | `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` | `0`, `1`, `true`, `false` |
-| `CONTEXT_BROKER_LOCAL_ONLY` | Force model loading from local cache only (no network) | `1` | `0`, `1`, `true`, `false` |
+| `CONTEXT_BROKER_LOCAL_ONLY` | Prefer cache-only loading, with one bootstrap download if missing | `0` | `0`, `1`, `true`, `false` |
 | `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend | `none` | `none`, `honcho`, `redis` |
 | `CONTEXT_BROKER_HONCHO_WORKSPACE_ID` | Honcho workspace id | `context-broker` | Any workspace id |
 | `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Honcho session id prefix | `context-broker` | Any safe prefix |

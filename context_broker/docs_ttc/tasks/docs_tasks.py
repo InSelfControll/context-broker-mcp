@@ -7,7 +7,6 @@ from typing import Any
 
 from context_broker.docs_ttc.tools.docs_tools import (
     ensure_feature_docs,
-    generate_feature_docs,
     get_docs_summary,
     scan_for_missing_docs,
 )

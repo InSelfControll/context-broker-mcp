@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from context_broker.agents_ttc.tasks.agents_tasks import (
     ensure_agents_md,

@@ -38,18 +38,13 @@ TOTAL_CORES = os.cpu_count() or 1
 """Number of CPU cores available for parallel processing."""
 WORKER_CORES = max(1, TOTAL_CORES // 2)
 """Number of CPU cores used for indexing/search (half of available cores)."""
-MODEL_LOCAL_ONLY: bool = os.environ.get("CONTEXT_BROKER_LOCAL_ONLY", "1").lower() in {
+MODEL_LOCAL_ONLY: bool = os.environ.get("CONTEXT_BROKER_LOCAL_ONLY", "0").lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-"""If enabled, embedding model loading is strictly local-only (no network fetch)."""
-
-if MODEL_LOCAL_ONLY:
-    # Force local/offline behavior for HuggingFace-backed model loading.
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+"""Prefer cache-only model loading, with one bootstrap download on a cache miss."""
 
 # Performance optimizations for PyTorch and NumPy
 os.environ["OMP_NUM_THREADS"] = str(WORKER_CORES)
@@ -70,6 +65,7 @@ SUPPORTED_EXTENSIONS: list[str] = [
     "*.json",
     "*.toml",
     "*.yaml",
+    "*.yml",
     "*.xml",
     "*.properties",
     "*.gradle",
@@ -80,6 +76,7 @@ SUPPORTED_EXTENSIONS: list[str] = [
     "*.js",
     "*.rs",
     "*.java",
+    "*.nix",
     # Additional web files
     "*.html",
     "*.css",
@@ -245,6 +242,12 @@ DEFAULT_IGNORE_DIRS: set[str] = {
     ".vscode",
     ".vs",
     ".settings",
+    # Nix / build products (often symlink into /nix/store)
+    "result",
+    "result-bin",
+    "result-dev",
+    "result-man",
+    "result-lib",
     # General
     ".cache",
     ".context-broker",
@@ -254,6 +257,84 @@ DEFAULT_IGNORE_DIRS: set[str] = {
     "logs",
 }
 """Directories that are always excluded from indexing (regardless of .gitignore)."""
+
+
+# =============================================================================
+# IGNORED FILE PATTERNS (bulky binaries / disk images / archives)
+# =============================================================================
+
+DEFAULT_IGNORE_FILE_PATTERNS: frozenset[str] = frozenset(
+    {
+        # Disk / install / appliance images (e.g. ofir-nixos-kde-installer.iso)
+        "*.iso",
+        "*.img",
+        "*.dmg",
+        "*.raw",
+        "*.wim",
+        "*.squashfs",
+        "*.appimage",
+        # VM / container disks
+        "*.qcow2",
+        "*.vmdk",
+        "*.vdi",
+        "*.vhd",
+        "*.vhdx",
+        # Compressed archives / packages (not source text)
+        "*.zip",
+        "*.7z",
+        "*.rar",
+        "*.tar",
+        "*.tgz",
+        "*.tar.gz",
+        "*.tar.bz2",
+        "*.tar.xz",
+        "*.tar.zst",
+        "*.gz",
+        "*.bz2",
+        "*.xz",
+        "*.zst",
+        "*.deb",
+        "*.rpm",
+        "*.apk",
+        "*.msi",
+        "*.pkg",
+        "*.whl",
+        "*.egg",
+        "*.nar",
+        "*.nar.xz",
+        # Compiled / opaque binaries
+        "*.exe",
+        "*.dll",
+        "*.so",
+        "*.dylib",
+        "*.o",
+        "*.a",
+        "*.bin",
+        "*.class",
+        "*.pyc",
+        "*.pyo",
+        # Large media blobs (never useful as code context)
+        "*.mp4",
+        "*.mkv",
+        "*.avi",
+        "*.mov",
+        "*.webm",
+        "*.mp3",
+        "*.wav",
+        "*.flac",
+        "*.ogg",
+        # Dump / DB blobs
+        "*.sqlite",
+        "*.sqlite3",
+        "*.db",
+        "*.dump",
+    }
+)
+"""Basename globs always excluded from indexing/search (case-insensitive).
+
+Hard block for install ISOs, VM disks, archives, and other bulky non-source
+artifacts — independent of SUPPORTED_EXTENSIONS and .gitignore.
+"""
 
 
 # =============================================================================
@@ -377,7 +458,7 @@ EMBEDDING_MODEL: str = os.environ.get(
 Configurable via CONTEXT_BROKER_EMBEDDING_MODEL. Any model compatible with
 the ``sentence-transformers`` library works — e.g. ``all-mpnet-base-v2``
 for higher quality, or ``paraphrase-MiniLM-L3-v2`` for faster searches.
-Must be pre-downloaded when CONTEXT_BROKER_LOCAL_ONLY is enabled.
+Missing models are downloaded automatically on first use.
 """
 
 ENCODING_MODEL: str = "cl100k_base"
@@ -413,6 +494,24 @@ BATCH_SIZE: int = 32
 """Batch size for embedding generation."""
 INDEX_FILE_MAX_CHARS: int = int(os.environ.get("CONTEXT_BROKER_INDEX_FILE_MAX_CHARS", "12000"))
 """Maximum characters read per file for indexing/token estimation."""
+INDEX_FOLLOW_SYMLINKS: bool = os.environ.get(
+    "CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS", "0"
+).lower() in {"1", "true", "yes", "on"}
+"""Follow directory/file symlinks while collecting files (default: off).
+
+Leaving this off prevents walks from escaping into ``/nix/store`` via a
+project ``result`` symlink and other large external trees that blow past the
+typical 300s MCP tool-call timeout.
+"""
+INDEX_MAX_FILE_BYTES: int = max(
+    0,
+    _get_env_int("CONTEXT_BROKER_INDEX_MAX_FILE_BYTES", 2_000_000),
+)
+"""Skip individual files larger than this many bytes during collection (0 = no cap)."""
+INDEX_DISK_CACHE_ENABLED: bool = os.environ.get(
+    "CONTEXT_BROKER_INDEX_DISK_CACHE", "1"
+).lower() in {"1", "true", "yes", "on"}
+"""Persist corpus embeddings under ``.cache/`` so idle cleanup / restarts skip full re-encode."""
 RESULT_FILE_MAX_CHARS: int = int(os.environ.get("CONTEXT_BROKER_RESULT_FILE_MAX_CHARS", "40000"))
 """Maximum characters read per file before snippet extraction."""
 RESULT_SNIPPET_WINDOW_CHARS: int = int(
@@ -536,4 +635,3 @@ DASHBOARD_HOST: str = os.environ.get("CONTEXT_BROKER_DASHBOARD_HOST", "127.0.0.1
 
 DASHBOARD_PORT: int = int(os.environ.get("CONTEXT_BROKER_DASHBOARD_PORT", "8770"))
 """Port for the web-only cross-chat dashboard."""
-
