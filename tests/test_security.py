@@ -188,6 +188,18 @@ class TestShouldIgnoreSecurity:
         result = should_ignore("/project/.npmrc", ".npmrc", [], set())
         assert result is False
 
+    def test_should_ignore_blocks_iso_and_disk_images(self) -> None:
+        assert should_ignore(
+            "/project/ofir-nixos-kde-installer.iso",
+            "ofir-nixos-kde-installer.iso",
+            [],
+            set(),
+        )
+        assert should_ignore("/project/Installer.ISO", "Installer.ISO", [], set())
+        assert should_ignore("/project/disk.qcow2", "disk.qcow2", [], set())
+        assert should_ignore("/project/root.img", "root.img", [], set())
+        assert should_ignore("/project/bundle.tar.gz", "dist/bundle.tar.gz", [], set())
+
 
 class TestReadFileContentSecurity:
     """Tests that read_file_content blocks secret files."""

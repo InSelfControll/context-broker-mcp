@@ -6,8 +6,29 @@ import fnmatch
 import os
 from pathlib import Path
 
-from context_broker.utils import log
+from context_broker.config import DEFAULT_IGNORE_FILE_PATTERNS
 from context_broker.project_ttc.tools.ignore_tools import match_double_star, parse_ignore_file
+from context_broker.utils import log
+
+
+def matches_ignored_file_pattern(
+    rel_path: str,
+    patterns: frozenset[str] | set[str] | list[str] = DEFAULT_IGNORE_FILE_PATTERNS,
+) -> bool:
+    """Return True when basename matches a hard-ignored bulky-file glob.
+
+    Matching is case-insensitive so ``Installer.ISO`` is blocked the same as
+    ``installer.iso``.
+    """
+    basename = os.path.basename(rel_path)
+    if not basename:
+        return False
+    lower = basename.lower()
+    for pattern in patterns:
+        pat = str(pattern)
+        if fnmatch.fnmatch(basename, pat) or fnmatch.fnmatch(lower, pat.lower()):
+            return True
+    return False
 
 
 def should_ignore(path: str, rel_path: str, patterns: list[str], ignore_dirs: set[str]) -> bool:
@@ -19,9 +40,14 @@ def should_ignore(path: str, rel_path: str, patterns: list[str], ignore_dirs: se
     """
     # SECURITY: Hard-block secret files first (cannot be overridden)
     from context_broker.security_ttc.tools import audit_log_secret_block, is_secret_file
+
     is_secret, reason = is_secret_file(path, rel_path)
     if is_secret:
         audit_log_secret_block(rel_path, reason, operation="index")
+        return True
+
+    # Hard-block bulky binaries / disk images / archives (ISO, qcow2, zip, …)
+    if matches_ignored_file_pattern(rel_path):
         return True
 
     for part in Path(path).parts:
