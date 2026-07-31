@@ -392,6 +392,9 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
+| `CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS` | Follow dir/file symlinks while collecting files (`0` avoids `/nix/store` via `result`) | `0` |
+| `CONTEXT_BROKER_INDEX_MAX_FILE_BYTES` | Skip files larger than N bytes during collection (`0` disables) | `2000000` |
+| `CONTEXT_BROKER_INDEX_DISK_CACHE` | Persist corpus embeddings under `.cache/` so restarts skip full re-encode | `1` |
 | `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none`, `honcho`, or `redis` | `none` |
 | `CONTEXT_BROKER_REDIS_URL` | Redis URL when `CONTEXT_BACKEND=redis` | *(empty)* |
 | `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for the context backend | `context-broker` |
@@ -412,6 +415,8 @@ It also exits when its launching host disappears and releases in-memory caches a
 ### Persistence Model
 
 - **Query cache** → local JSON at `.cache/context-broker.json`.
+- **Corpus embedding index** → `.cache/context-broker-index.json` + `.cache/context-broker-index.npy` (invalidated by path set / mtime fingerprint / model name).
+- **Hard-ignored bulky files** → `DEFAULT_IGNORE_FILE_PATTERNS` always skips ISOs, VM disks, archives, packages, media, and dumps (case-insensitive), independent of `.gitignore`.
 - **Saved results / user memory** → local JSON under `.context-broker/` or `~/.context-broker/`.
 - **Token history** → local JSON under the same storage directories.
 - **Cross-chat context** → optional Honcho **or** Redis backend (see below).

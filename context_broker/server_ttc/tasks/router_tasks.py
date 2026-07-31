@@ -75,8 +75,17 @@ def register_router_tools(mcp: FastMCP) -> None:
     async def search_context(query: str, project_root: str = "", top_k: int = 5, ctx: Context = None) -> str:
         """Search relevant project context through the UCR public surface."""
         with tracked_activity():
+            await progress(
+                ctx,
+                f"🔎 search_context starting (top_k={top_k}); "
+                "collecting files / loading cached embeddings…",
+            )
             result = search_context_api(query, project_root=project_root, top_k=top_k)
-            await progress(ctx, "🔎 search_context completed")
+            payload = result.get("result") if isinstance(result, dict) else None
+            files = 0
+            if isinstance(payload, dict):
+                files = int(payload.get("returned_files") or len(payload.get("results") or []))
+            await progress(ctx, f"🔎 search_context completed ({files} file(s))")
             return json.dumps(result, indent=2, ensure_ascii=False, default=str)
 
     @mcp.tool()

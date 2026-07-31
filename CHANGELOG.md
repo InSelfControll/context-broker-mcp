@@ -10,9 +10,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- 🐛 **search_context / indexing timeouts**: stop recursive `glob` walks that followed project `result` → `/nix/store` (and other symlink escapes), which routinely exceeded the client 300s MCP tool budget on Nix/HM trees. File collection now uses a single `os.walk` that prunes ignored dirs up front and refuses symlink descent by default (`CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS=0`).
 - 🐛 allow MCP harnesses to disable automatic `.env` loading
 - 🐛 limit bootstrap to model cache misses — `13aa679`
 - 🐛 bootstrap missing embedding models — `4814a9f`
+
+### Added
+
+- ✨ On-disk corpus embedding cache under `.cache/context-broker-index.{json,npy}` so idle cleanup / process restarts reload embeddings without a full re-encode (`CONTEXT_BROKER_INDEX_DISK_CACHE=1`).
+- ✨ Index collection guards: `CONTEXT_BROKER_INDEX_MAX_FILE_BYTES` (default 2MB), hard-ignore Nix `result*` product dirs, index `*.nix` and `*.yml`.
+- ✨ Shared `collect_project_files` used by semantic index + literal search.
+- ✨ Hard-ignore bulky non-source artifacts via `DEFAULT_IGNORE_FILE_PATTERNS` (case-insensitive): `*.iso`, VM disks (`*.qcow2`/`*.vmdk`/…), archives, packages, media, dumps — e.g. `ofir-nixos-kde-installer.iso`.
 
 ### Documentation
 

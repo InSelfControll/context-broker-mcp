@@ -27,6 +27,23 @@ def default_tool_descriptors() -> list[ToolDescriptor]:
             shell_capable=False,
         ),
         ToolDescriptor(
+            id="find_in_codebase",
+            name="find_in_codebase",
+            category="search",
+            description=(
+                "Local literal/regex pattern search in codebase files. "
+                "Returns exact matches with line numbers and snippets. "
+                "No external LLM — completes locally to save tokens."
+            ),
+            schema_summary="pattern: str, project_root: str, case_sensitive: bool, use_regex: bool, file_glob: str",
+            tags=["search", "code", "literal", "grep", "regex", "local", "exact"],
+            permissions=["read_project_files"],
+            risk_level="low",
+            file_capable=True,
+            network_capable=False,
+            shell_capable=False,
+        ),
+        ToolDescriptor(
             id="auto_search",
             name="auto_search",
             category="search",

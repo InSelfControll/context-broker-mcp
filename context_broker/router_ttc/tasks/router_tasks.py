@@ -5,7 +5,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any, Callable
 
-from context_broker.indexer import search_codebase
+from context_broker.indexer import literal_search, search_codebase
 from context_broker.project import resolve_project_root
 from context_broker.router_ttc.tasks.planner_tasks import build_plan
 from context_broker.router_ttc.tools.default_tools import default_tool_descriptors
@@ -44,6 +44,28 @@ def detect_intent(task: str) -> dict[str, Any]:
         intents.append("mutate")
     if any(word in lowered for word in ["deploy", "shell", "command", "run"]):
         intents.append("execute")
+    # Detect literal/exact search intent — queries that name a specific symbol,
+    # identifier, or ask for exact text. These should use find_in_codebase
+    # (local grep) instead of semantic search to avoid external LLM round-trips.
+    _LITERAL_SIGNALS = (
+        "session id",
+        "session_id",
+        "auth function",
+        "function def",
+        "def ",
+        "class ",
+        "import ",
+        "variable name",
+        "exact",
+        "literal",
+        "grep",
+        "where is",
+        "where's",
+        "which file",
+        "which line",
+    )
+    if any(signal in lowered for signal in _LITERAL_SIGNALS):
+        intents.append("literal_search")
     if not intents:
         intents.append("context")
     return {"version": "ucr.intent.v1", "intents": intents, "confidence": 0.7}
@@ -53,6 +75,14 @@ def decompose_task(task: str) -> list[dict[str, Any]]:
     """Perform lightweight skill-aware decomposition without binding to one client."""
     intent = detect_intent(task)["intents"]
     steps: list[dict[str, Any]] = []
+    if "literal_search" in intent:
+        steps.append(
+            {
+                "id": "s0",
+                "goal": "find exact pattern matches locally (no external LLM)",
+                "preferred_tags": ["search", "literal", "grep", "exact"],
+            }
+        )
     if "search_context" in intent:
         steps.append({"id": "s1", "goal": "retrieve relevant context", "preferred_tags": ["search"]})
     if "mutate" in intent:
@@ -74,6 +104,19 @@ def _select_tools(
     relevant = [item for item in ranked if item.score >= 0.08]
     if not relevant and ranked:
         relevant = [ranked[0]]
+
+    # When literal_search intent is detected, ensure find_in_codebase is
+    # selected and appears first — it completes locally without an external
+    # LLM round-trip, saving tokens.
+    intents = detect_intent(task)["intents"]
+    if "literal_search" in intents:
+        literal_desc = registry.get("find_in_codebase")
+        if literal_desc is not None:
+            relevant = [
+                item for item in relevant if item.descriptor.id != "find_in_codebase"
+            ]
+            relevant.insert(0, type(ranked[0])(descriptor=literal_desc, score=1.0))
+
     selected: list[ToolDescriptor] = []
     used_tokens = 0
     for item in relevant:
@@ -146,7 +189,14 @@ def _safe_executors() -> dict[str, Callable[[dict[str, Any]], Any]]:
             str(args.get("query", "")),
             resolve_project_root(str(args.get("project_root", ""))),
             top_k=int(args.get("top_k", 5)),
-        )
+        ),
+        "find_in_codebase": lambda args: literal_search(
+            str(args.get("pattern", "")),
+            resolve_project_root(str(args.get("project_root", ""))),
+            case_sensitive=bool(args.get("case_sensitive", False)),
+            use_regex=bool(args.get("use_regex", False)),
+            file_glob=str(args.get("file_glob", "")),
+        ),
     }
 
 
