@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from context_broker.config import SECRET_ENV_KEY_PATTERNS, SECRET_FILE_PATTERNS
 from context_broker.indexer_ttc.tools.io_tools import read_file_content
@@ -188,6 +187,18 @@ class TestShouldIgnoreSecurity:
         """.npmrc without auth should pass through should_ignore."""
         result = should_ignore("/project/.npmrc", ".npmrc", [], set())
         assert result is False
+
+    def test_should_ignore_blocks_iso_and_disk_images(self) -> None:
+        assert should_ignore(
+            "/project/ofir-nixos-kde-installer.iso",
+            "ofir-nixos-kde-installer.iso",
+            [],
+            set(),
+        )
+        assert should_ignore("/project/Installer.ISO", "Installer.ISO", [], set())
+        assert should_ignore("/project/disk.qcow2", "disk.qcow2", [], set())
+        assert should_ignore("/project/root.img", "root.img", [], set())
+        assert should_ignore("/project/bundle.tar.gz", "dist/bundle.tar.gz", [], set())
 
 
 class TestReadFileContentSecurity:

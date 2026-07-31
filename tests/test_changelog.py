@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import pytest
 
 from context_broker.changelog_ttc.tools.changelog_tools import (
     COMMIT_TYPE_EMOJI,

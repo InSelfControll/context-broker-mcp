@@ -10,7 +10,8 @@ On startup, the nearest .env file (walked up from CWD) is loaded into
 os.environ — but only for keys that aren't already set by the parent process.
 This lets multiple editor MCP clients (Claude Code, Codex, Cursor, ...) point
 at the same Redis/dashboard without exporting env vars in every shell, while
-still letting per-editor overrides win.
+still letting per-editor overrides win. Set CONTEXT_BROKER_AUTO_LOAD_ENV=0 to
+disable .env discovery entirely.
 
 Transport selection via CONTEXT_BROKER_TRANSPORT env var:
     stdio            - (default) stdin/stdout JSON-RPC
@@ -19,12 +20,19 @@ Transport selection via CONTEXT_BROKER_TRANSPORT env var:
     ws               - WebSocket transport
 """
 
+import os
 import sys
 
 # Load .env BEFORE importing context_broker.config (which reads env at import time).
 from context_broker.env_loader import load_env
 
-load_env()
+if os.getenv("CONTEXT_BROKER_AUTO_LOAD_ENV", "1").strip().lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+}:
+    load_env()
 
 from context_broker.config import (  # noqa: E402
     DASHBOARD_HOST,

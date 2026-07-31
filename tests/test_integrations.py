@@ -2,6 +2,8 @@
 
 import json
 import os
+import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -536,6 +538,32 @@ not-a-valid-line
     assert "not-a-valid-line" not in parsed
 
 
+def test_module_entrypoint_can_disable_automatic_env_loading(tmp_path: Path) -> None:
+    _write_env(tmp_path / ".env", "CB_TEST_ENTRYPOINT=fromfile\n")
+    child_env = os.environ.copy()
+    child_env.pop("CB_TEST_ENTRYPOINT", None)
+    child_env["CONTEXT_BROKER_AUTO_LOAD_ENV"] = "0"
+    child_env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import os; import context_broker.__main__; "
+                "print(os.environ.get('CB_TEST_ENTRYPOINT', 'missing'))"
+            ),
+        ],
+        cwd=tmp_path,
+        env=child_env,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.stdout.strip() == "missing"
+
+
 # ---------------------------------------------------------------------------
 # Dashboard single-instance guard
 # ---------------------------------------------------------------------------
@@ -543,7 +571,6 @@ not-a-valid-line
 
 def test_dashboard_guard_recognises_running_instance(monkeypatch_fixtures=None) -> None:
     """Probe returns our status banner → guard says "already running"."""
-    import io
     import context_broker.__main__ as cli
 
     class _Resp:
