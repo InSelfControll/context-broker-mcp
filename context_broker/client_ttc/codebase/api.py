@@ -15,7 +15,8 @@ from context_broker.client_ttc.tools.contract_tools import (
     DownstreamTool,
     DownstreamTransport,
 )
-from context_broker.client_ttc.tools.transport_tools import filtered_stdio_env, open_downstream_session
+from context_broker.client_ttc.tools.environment_tools import filtered_stdio_env
+from context_broker.client_ttc.tools.transport_tools import open_downstream_session
 
 __all__ = [
     "ConnectionState",

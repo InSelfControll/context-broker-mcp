@@ -1,14 +1,14 @@
 """Server assembly layer (Codebase in TTC pattern)."""
 
-import os
-
 from fastmcp import FastMCP
 
+from context_broker.config import UCR_PUBLIC_SURFACE_ONLY
 from context_broker.server_ttc.codebase.resources import register_resources_and_prompts
 from context_broker.server_ttc.tasks.agents_tasks import register_agents_tools
 from context_broker.server_ttc.tasks.changelog_tasks import register_changelog_tools
 from context_broker.server_ttc.tasks.context_tasks import register_context_tools
 from context_broker.server_ttc.tasks.docs_tasks import register_docs_tools
+from context_broker.server_ttc.tasks.doctor_tasks import register_doctor_tools
 from context_broker.server_ttc.tasks.router_tasks import register_router_tools
 from context_broker.server_ttc.tasks.search_tasks import register_search_tools
 from context_broker.server_ttc.tasks.storage_tasks import register_storage_tools
@@ -20,12 +20,7 @@ _default_server: FastMCP | None = None
 def create_mcp_server() -> FastMCP:
     """Create and configure the MCP server."""
     mcp = FastMCP("Context Broker - Semantic Code Search")
-    if os.environ.get("CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY", "0").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
+    if UCR_PUBLIC_SURFACE_ONLY:
         register_router_tools(mcp)
         register_resources_and_prompts(mcp)
         return mcp
@@ -37,6 +32,7 @@ def create_mcp_server() -> FastMCP:
     register_agents_tools(mcp)
     register_changelog_tools(mcp)
     register_docs_tools(mcp)
+    register_doctor_tools(mcp)
     register_resources_and_prompts(mcp)
     return mcp
 

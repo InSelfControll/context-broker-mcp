@@ -18,6 +18,7 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse as _HTMLResponse, JSONResponse as _JSONResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp
 
 from context_broker.dashboard_ttc.tasks import data_tasks
 from context_broker.dashboard_ttc.tools.templates import (
@@ -152,9 +153,13 @@ async def api_user_activity(request: Request) -> _JSONResponse:
         return _json_error(e)
 
 
-def create_app() -> Starlette:
-    """Build the dashboard's Starlette app."""
-    return Starlette(
+def create_app() -> ASGIApp:
+    """Build the dashboard's Starlette app.
+
+    When CONTEXT_BROKER_AUTH_TOKEN is set, every request must present it
+    (Authorization: Bearer header or ?token= query parameter).
+    """
+    app = Starlette(
         debug=False,
         routes=[
             Route("/", index, name="index"),
@@ -182,3 +187,35 @@ def create_app() -> Starlette:
             ),
         ],
     )
+    return _TokenAuthMiddleware(app)
+
+
+class _TokenAuthMiddleware:
+    """Pure-ASGI bearer-token gate; no-op when AUTH_TOKEN is unset."""
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] in ("http", "websocket"):
+            from context_broker.config import AUTH_TOKEN
+
+            if AUTH_TOKEN:
+                from urllib.parse import parse_qs
+
+                from context_broker.server_ttc.tools.auth_tools import (
+                    token_from,
+                    token_valid,
+                )
+
+                headers = {
+                    k.decode("latin-1").lower(): v.decode("latin-1")
+                    for k, v in scope.get("headers", [])
+                }
+                query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
+                candidate = token_from(headers, (query.get("token") or [""])[0])
+                if not token_valid(candidate):
+                    response = JSONResponse({"detail": "unauthorized"}, status_code=401)
+                    await response(scope, receive, send)
+                    return
+        await self.app(scope, receive, send)

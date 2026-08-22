@@ -95,11 +95,14 @@ def _warm_session_cache(project_root: str, session_id: str) -> bool:
         return False
 
 
-def _save(**kwargs) -> dict:
+def _save(warm_cache: bool = True, **kwargs) -> dict:
     """Dispatch save to the active backend, dual-write the ledger (done inside
     the backend save), invalidate prior cache entries, and — by default — warm
     the default-params cache signature with the full session so the next read
     is a cached hit instead of a miss-then-fill round trip.
+
+    Batch callers (record_session) pass warm_cache=False per turn and warm
+    once at the end, reporting the real outcome.
     """
     if CONTEXT_BACKEND == "redis":
         result = save_redis_chat_context(**kwargs)
@@ -111,7 +114,7 @@ def _save(**kwargs) -> dict:
     # Always invalidate so parameterized reads (search_query, custom tokens, ...)
     # see the new turns.
     chat_cache.invalidate(project_root, session_id)
-    if AUTO_WARM_CACHE_ON_SAVE:
+    if AUTO_WARM_CACHE_ON_SAVE and warm_cache:
         result["cache_warmed"] = _warm_session_cache(project_root, session_id)
     else:
         result["cache_warmed"] = False
@@ -214,13 +217,20 @@ def register_context_tools(mcp: FastMCP) -> None:
             ledger_files: list[str] = []
             backend_label = CONTEXT_BACKEND
             try:
+                # Validate the ENTIRE batch before writing anything, so a
+                # malformed turn can never leave a partially committed session.
+                prepared: list[tuple[str, str]] = []
                 for index, turn in enumerate(turns):
                     if not isinstance(turn, dict):
                         return f"Error: turns[{index}] is not an object"
                     user_msg = str(turn.get("user", "") or "")
                     assistant_msg = str(turn.get("assistant", "") or "")
-                    if not (user_msg or assistant_msg):
-                        continue
+                    if user_msg or assistant_msg:
+                        prepared.append((user_msg, assistant_msg))
+                if not prepared:
+                    return "Error: every turn is empty — nothing to record"
+
+                for user_msg, assistant_msg in prepared:
                     payload = _save(
                         session_id=session_id,
                         project_root=root,
@@ -228,6 +238,7 @@ def register_context_tools(mcp: FastMCP) -> None:
                         assistant_message=assistant_msg,
                         user_peer_id=user_peer_id,
                         assistant_peer_id=assistant_peer_id,
+                        warm_cache=False,
                     )
                     total_saved += int(payload.get("messages_saved", 0))
                     backend_label = payload.get("backend", backend_label)
@@ -235,19 +246,24 @@ def register_context_tools(mcp: FastMCP) -> None:
                         if path not in ledger_files:
                             ledger_files.append(path)
 
+                # Warm the cache once for the whole batch, per the API contract.
+                cache_warmed = (
+                    _warm_session_cache(root, session_id) if AUTO_WARM_CACHE_ON_SAVE else False
+                )
                 log(
                     f"record_session persisted {total_saved} messages "
-                    f"across {len(turns)} turn(s) into '{session_id}' "
-                    f"({backend_label}; cache warmed)"
+                    f"across {len(prepared)} turn(s) into '{session_id}' "
+                    f"({backend_label}; cache warmed: {cache_warmed})"
                 )
                 return dumps_context_payload(
                     {
                         "backend": backend_label,
                         "session_id": session_id,
-                        "turns_recorded": len(turns),
+                        "turns_recorded": len(prepared),
+                        "turns_skipped": len(turns) - len(prepared),
                         "messages_saved": total_saved,
                         "ledger_files": ledger_files,
-                        "cache_warmed": True,
+                        "cache_warmed": cache_warmed,
                     }
                 )
             except Exception as e:

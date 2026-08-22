@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from time import perf_counter
 from typing import Any, Callable
 
+from context_broker.config import ROUTER_PLAN_CACHE_MAX
 from context_broker.indexer import literal_search, search_codebase
 from context_broker.project import resolve_project_root
 from context_broker.router_ttc.tasks.planner_tasks import build_plan
@@ -19,7 +21,8 @@ from context_broker.router_ttc.tools.safety_tools import (
 from context_broker.router_ttc.tools.token_tools import descriptor_token_count, token_report_for_selection
 
 RouterMode = str
-_PLAN_CACHE: dict[tuple[str, str, int, int, str], dict[str, Any]] = {}
+_PLAN_CACHE: OrderedDict[tuple[str, str, int, int, str], dict[str, Any]] = OrderedDict()
+"""LRU-bounded plan cache — capped at ROUTER_PLAN_CACHE_MAX entries."""
 
 
 def get_default_registry() -> ToolRegistry:
@@ -153,6 +156,7 @@ def route_task(
     cache_key = (task, mode, token_budget, top_k, active_registry.fingerprint())
     if cache_key in _PLAN_CACHE:
         metrics.cache_hits += 1
+        _PLAN_CACHE.move_to_end(cache_key)
         cached = dict(_PLAN_CACHE[cache_key])
         cached["cached"] = True
         return cached
@@ -180,6 +184,9 @@ def route_task(
     }
     metrics.observe_latency(started)
     _PLAN_CACHE[cache_key] = result
+    _PLAN_CACHE.move_to_end(cache_key)
+    while len(_PLAN_CACHE) > ROUTER_PLAN_CACHE_MAX:
+        _PLAN_CACHE.popitem(last=False)
     return result
 
 

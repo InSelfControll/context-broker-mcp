@@ -9,7 +9,11 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from context_broker.config import RESULT_FILE_MAX_CHARS
-from context_broker.indexer_ttc.tasks.index_tasks import get_index_for_project
+from context_broker.indexer_ttc.tasks.index_tasks import (
+    ProgressCallback,
+    _emit,
+    get_index_for_project,
+)
 from context_broker.indexer_ttc.tasks.snippet_tasks import (
     extract_query_terms,
     prepare_result_content,
@@ -39,7 +43,12 @@ def _token_savings_vs_corpus(total_tokens: int, context_tokens: int) -> tuple[in
     return saved, (saved / total_tokens) * 100.0
 
 
-def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, Any]:
+def search_codebase(
+    query: str,
+    project_root: str,
+    top_k: int = 5,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """Search the codebase using semantic similarity."""
     if not project_root:
         raise ValueError("project_root is required")
@@ -48,7 +57,7 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
     cache_key = generate_cache_key(query, top_k)
     cache = load_query_cache(project_root)
 
-    idx = get_index_for_project(project_root)
+    idx = get_index_for_project(project_root, progress_callback=progress_callback)
     if idx is None:
         raise ValueError(f"No files found in {project_root}")
 
@@ -57,10 +66,12 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
         cache_entry = cache[cache_key]
         if is_cache_valid(cache_entry, current_mtimes):
             log(f"⚡ CACHE HIT for query: {query[:50]}...")
+            _emit(progress_callback, "⚡ Query cache hit — reusing previous results")
             return _load_cached_results(cache_entry, idx)
         log(f"🔄 Cache STALE for query: {query[:50]}...")
 
     log(f"🔍 CACHE MISS for query: {query[:50]}...")
+    _emit(progress_callback, f"🧮 Scoring {len(idx['paths'])} indexed documents...")
     query_vec = idx["model"].encode([query])
     scores = cosine_similarity(query_vec, idx["embeddings"])[0]
     top_indices = np.argsort(scores)[::-1][:top_k]

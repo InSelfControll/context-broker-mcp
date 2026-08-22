@@ -11,12 +11,21 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any
+from typing import Any, Iterator
 
-from context_broker.config import DEFAULT_IGNORE_DIRS
+from context_broker.config import (
+    DEFAULT_IGNORE_DIRS,
+    REGEX_MATCH_TIMEOUT_SECONDS,
+    REGEX_MAX_PATTERN_CHARS,
+)
 from context_broker.indexer_ttc.tools.collect_tools import collect_project_files
 from context_broker.indexer_ttc.tools.io_tools import read_file_content
 from context_broker.utils import log
+
+try:
+    import regex as _bounded_regex
+except ImportError:  # pragma: no cover - optional acceleration/safety engine
+    _bounded_regex = None
 
 # Maximum matches per file to avoid overwhelming the response.
 _MAX_MATCHES_PER_FILE = 20
@@ -31,17 +40,38 @@ def _collect_files(project_root: str) -> list[str]:
     return collect_project_files(project_root, ignore_dirs=DEFAULT_IGNORE_DIRS)
 
 
-def _build_regex(pattern: str, case_sensitive: bool, use_regex: bool) -> re.Pattern[str]:
-    """Compile *pattern* into a regex, escaping it if regex mode is off."""
-    flags = 0 if case_sensitive else re.IGNORECASE
+def _build_regex(pattern: str, case_sensitive: bool, use_regex: bool):
+    """Compile *pattern* into a regex, escaping it if regex mode is off.
+
+    Caller-supplied regexes are length-capped and, when the third-party
+    ``regex`` engine is installed, compiled with it so matching can be
+    time-boxed (defense against catastrophic backtracking / ReDoS).
+    """
     if not use_regex:
-        pattern = re.escape(pattern)
+        flags = 0 if case_sensitive else re.IGNORECASE
+        return re.compile(re.escape(pattern), flags)
+    if len(pattern) > REGEX_MAX_PATTERN_CHARS:
+        raise ValueError(
+            f"regex pattern too long: {len(pattern)} chars "
+            f"(max {REGEX_MAX_PATTERN_CHARS})"
+        )
+    if _bounded_regex is not None:
+        rx_flags = 0 if case_sensitive else _bounded_regex.IGNORECASE
+        return _bounded_regex.compile(pattern, rx_flags)
+    flags = 0 if case_sensitive else re.IGNORECASE
     return re.compile(pattern, flags)
+
+
+def _finditer(regex_obj: Any, content: str) -> Iterator[Any]:
+    """Iterate matches, time-boxed when the bounded engine compiled it."""
+    if _bounded_regex is not None and isinstance(regex_obj, _bounded_regex.Pattern):
+        return regex_obj.finditer(content, timeout=REGEX_MATCH_TIMEOUT_SECONDS)
+    return regex_obj.finditer(content)
 
 
 def _extract_match_snippet(
     content: str,
-    match: re.Match[str],
+    match: Any,
     context_chars: int = _CONTEXT_CHARS,
 ) -> str:
     """Return a one-line snippet around *match* with ellipsis trimming."""
@@ -110,21 +140,29 @@ def literal_search(
 
         file_matches: list[dict[str, Any]] = []
         file_match_count = 0
-        for match in regex.finditer(content):
-            if file_match_count >= _MAX_MATCHES_PER_FILE:
-                break
-            line_num = content.count("\n", 0, match.start()) + 1
-            file_matches.append(
-                {
-                    "line": line_num,
-                    "match": match.group(),
-                    "snippet": _extract_match_snippet(content, match),
-                }
+        try:
+            for match in _finditer(regex, content):
+                if file_match_count >= _MAX_MATCHES_PER_FILE:
+                    break
+                line_num = content.count("\n", 0, match.start()) + 1
+                file_matches.append(
+                    {
+                        "line": line_num,
+                        "match": match.group(),
+                        "snippet": _extract_match_snippet(content, match),
+                    }
+                )
+                file_match_count += 1
+                total_matches += 1
+                if total_matches >= max_matches:
+                    break
+        except TimeoutError:
+            log(
+                f"⚠ Regex match exceeded {REGEX_MATCH_TIMEOUT_SECONDS}s on "
+                f"'{file_path}' — file skipped (possible pathological pattern)",
+                "WARN",
             )
-            file_match_count += 1
-            total_matches += 1
-            if total_matches >= max_matches:
-                break
+            continue
 
         if file_matches:
             files_with_matches += 1

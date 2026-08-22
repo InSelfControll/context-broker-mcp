@@ -231,7 +231,7 @@ class ToolRegistry:
         try:
             return self._load_payload(json.loads(self.cache_path.read_text()))
         except Exception as exc:
-            log(f"⚠️ UCR registry JSON cache load failed: {exc}", "WARN")
+            log(f"⚠ UCR registry JSON cache load failed: {exc}", "WARN")
             self._tools.clear()
             self._vectors.clear()
             return False
@@ -276,7 +276,7 @@ class ToolRegistry:
                 self._vectors.setdefault(descriptor.id, _vectorize(descriptor.searchable_text()))
             return bool(self._tools)
         except Exception as exc:
-            log(f"⚠️ UCR registry SQLite cache load failed: {exc}", "WARN")
+            log(f"⚠ UCR registry SQLite cache load failed: {exc}", "WARN")
             self._tools.clear()
             self._vectors.clear()
             return False
@@ -292,7 +292,7 @@ class ToolRegistry:
             client.set("context-broker:ucr:tool-registry", json.dumps(payload, ensure_ascii=False))
             return True
         except Exception as exc:  # pragma: no cover - optional dependency/server
-            log(f"⚠️ UCR registry Redis save skipped: {exc}", "WARN")
+            log(f"⚠ UCR registry Redis save skipped: {exc}", "WARN")
             return False
 
     def load_redis(self) -> bool:
@@ -308,7 +308,7 @@ class ToolRegistry:
                 return False
             return self._load_payload(json.loads(raw))
         except Exception as exc:  # pragma: no cover - optional dependency/server
-            log(f"⚠️ UCR registry Redis load skipped: {exc}", "WARN")
+            log(f"⚠ UCR registry Redis load skipped: {exc}", "WARN")
             return False
 
     def fingerprint(self) -> str:

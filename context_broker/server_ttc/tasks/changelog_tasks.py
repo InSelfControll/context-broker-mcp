@@ -128,11 +128,11 @@ def register_changelog_tools(mcp: FastMCP) -> None:
                 else:
                     lines.extend([
                         "",
-                        f"⚠️ {missing} commits are not documented.",
+                        f"⚠ {missing} commits are not documented.",
                         "",
                         f"💡 {result.get('suggestion', 'Run ensure_changelog to update.')}",
                     ])
-                    await progress(ctx, f"⚠️ {missing} commits undocumented")
+                    await progress(ctx, f"⚠ {missing} commits undocumented")
 
                 return "\n".join(lines)
             except Exception as e:
@@ -170,11 +170,11 @@ def register_changelog_tools(mcp: FastMCP) -> None:
                 commit_count = result.get("commit_count", "0")
 
                 if status == "no_changes":
-                    await progress(ctx, "ℹ️ No new commits found")
+                    await progress(ctx, "ℹ No new commits found")
                     return (
                         f"📋 Version Changelog: {version}\n"
                         f"\n"
-                        f"ℹ️ No new commits found since last update."
+                        f"ℹ No new commits found since last update."
                     )
 
                 await progress(ctx, f"✅ Generated changelog for {version} ({commit_count} commits)")
@@ -226,7 +226,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
                     f"📋 CHANGELOG.md Statistics\n"
                     f"📁 Path: {root / 'CHANGELOG.md'}\n"
                     f"📊 Versions documented: {result.get('versions', '0')}\n"
-                    f"🏷️  Latest version: {result.get('latest_version', 'N/A')}\n"
+                    f"🏷  Latest version: {result.get('latest_version', 'N/A')}\n"
                     f"📝 Total entries: {result.get('total_entries', '0')}"
                 )
             except Exception as e:

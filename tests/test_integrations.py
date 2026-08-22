@@ -92,6 +92,40 @@ class FakeRedis:
                     removed += 1
         return removed
 
+    def hincrby(self, key: str, field: str, amount: int = 1) -> int:
+        try:
+            current = int(self.hashes[key].get(field, "0") or "0")
+        except ValueError:
+            current = 0
+        current += amount
+        self.hashes[key][field] = str(current)
+        return current
+
+    def pipeline(self, transaction: bool = True) -> "_FakePipeline":
+        return _FakePipeline(self)
+
+
+class _FakePipeline:
+    """Buffered MULTI/EXEC double: records calls, applies them on execute()."""
+
+    def __init__(self, client: "FakeRedis") -> None:
+        self._client = client
+        self._ops: list[tuple[str, tuple, dict]] = []
+
+    def __getattr__(self, name: str):
+        def recorder(*args, **kwargs):
+            self._ops.append((name, args, kwargs))
+            return self
+
+        return recorder
+
+    def execute(self) -> list:
+        results = []
+        for name, args, kwargs in self._ops:
+            results.append(getattr(self._client, name)(*args, **kwargs))
+        self._ops.clear()
+        return results
+
 
 # ---------------------------------------------------------------------------
 # Cache + Honcho status sanity checks (kept from earlier coverage)

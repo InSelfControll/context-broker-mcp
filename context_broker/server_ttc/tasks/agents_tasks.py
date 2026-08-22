@@ -90,11 +90,11 @@ def register_agents_tools(mcp: FastMCP) -> None:
 
                 if status == "missing":
                     lines.extend([
-                        "⚠️  AGENTS.md is missing!",
+                        "⚠  AGENTS.md is missing!",
                         "",
                         "💡 Run `ensure_agents_md` to create one automatically.",
                     ])
-                    await progress(ctx, "⚠️ AGENTS.md is missing")
+                    await progress(ctx, "⚠ AGENTS.md is missing")
                     return "\n".join(lines)
 
                 missing_required = result.get("missing_required", [])
@@ -111,7 +111,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
 
                 if missing_optional:
                     lines.extend([
-                        f"⚠️  Missing Optional Sections ({len(missing_optional)}):",
+                        f"⚠  Missing Optional Sections ({len(missing_optional)}):",
                     ])
                     for item in missing_optional[:10]:
                         lines.append(f"   • {item}")
@@ -135,10 +135,10 @@ def register_agents_tools(mcp: FastMCP) -> None:
                     await progress(ctx, "✅ AGENTS.md validation passed")
                 else:
                     lines.extend([
-                        "⚠️  AGENTS.md needs improvement.",
+                        "⚠  AGENTS.md needs improvement.",
                         "",
                     ])
-                    await progress(ctx, "⚠️ AGENTS.md needs improvement")
+                    await progress(ctx, "⚠ AGENTS.md needs improvement")
 
                 return "\n".join(lines)
             except Exception as e:
@@ -171,7 +171,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
                 path = result["path"]
 
                 if status == "exists":
-                    await progress(ctx, "⚠️ AGENTS.md already exists")
+                    await progress(ctx, "⚠ AGENTS.md already exists")
                     return (
                         f"📄 AGENTS.md already exists at: {path}\n"
                         f"\n"

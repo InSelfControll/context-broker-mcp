@@ -6,8 +6,22 @@ import json
 from typing import Any, Optional
 
 from context_broker.config import IN_PROJECT_FOLDER, STORAGE_BASE_DIR, STORAGE_MODE, StorageMode
-from context_broker.storage_ttc.tools.path_tools import get_storage_dir, get_storage_dirs
+from context_broker.security_ttc.tools import is_secret_file
+from context_broker.storage_ttc.tools.path_tools import (
+    get_storage_dir,
+    get_storage_dirs,
+    sanitize_storage_component,
+)
 from context_broker.utils import log
+
+
+def _validate_filename(filename: str) -> str:
+    """Validate an MCP-supplied storage filename before any read/write."""
+    cleaned = sanitize_storage_component(filename, kind="filename")
+    is_secret, reason = is_secret_file(cleaned, cleaned)
+    if is_secret:
+        raise ValueError(f"Invalid filename: {reason}")
+    return cleaned
 
 
 def save_json_data(
@@ -21,6 +35,7 @@ def save_json_data(
 ) -> str:
     """Save JSON data to project storage directories."""
     local_path, global_path = get_storage_dirs(project_name, subdir, project_root)
+    filename = _validate_filename(filename)
     if not filename.endswith(".json"):
         filename = filename + ".json"
 
@@ -55,6 +70,7 @@ def load_json_data(
 ) -> Optional[Any]:
     """Load JSON data from project storage directories."""
     local_path, global_path = get_storage_dirs(project_name, subdir, project_root)
+    filename = _validate_filename(filename)
     if not filename.endswith(".json"):
         filename = filename + ".json"
 
@@ -68,7 +84,7 @@ def load_json_data(
             with open(filepath, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            log(f"⚠️ Failed to load JSON from {filepath}: {e}", "WARN")
+            log(f"⚠ Failed to load JSON from {filepath}: {e}", "WARN")
             return None
 
     mode = STORAGE_MODE.lower()

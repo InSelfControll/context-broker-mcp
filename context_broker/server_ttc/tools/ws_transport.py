@@ -7,11 +7,11 @@ built-in stdio transport.
 
 Usage:
     mcp = get_default_server()
-    mcp.run(transport="ws", host="0.0.0.0", port=8765)
+    mcp.run(transport="ws", host="127.0.0.1", port=8765)
 
     # Or via environment variables:
     CONTEXT_BROKER_TRANSPORT=ws
-    CONTEXT_BROKER_HOST=0.0.0.0
+    CONTEXT_BROKER_HOST=127.0.0.1
     CONTEXT_BROKER_PORT=8765
 """
 
@@ -27,6 +27,8 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import mcp.types as types
 from mcp.shared.message import SessionMessage
+
+from context_broker.server_ttc.tools.auth_tools import token_from, token_valid
 
 
 @asynccontextmanager
@@ -97,6 +99,10 @@ def create_ws_app(server) -> Starlette:
     from mcp.server.lowlevel.server import NotificationOptions
 
     async def ws_endpoint(ws: WebSocket):
+        candidate = token_from(ws.headers, ws.query_params.get("token", ""))
+        if not token_valid(candidate):
+            await ws.close(code=4401, reason="unauthorized")
+            return
         await ws.accept()
         print(
             f"[ws] client connected: {ws.client}",

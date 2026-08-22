@@ -307,8 +307,10 @@ name = "context-broker"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "fastmcp" },
     { name = "numpy" },
+    { name = "regex" },
     { name = "rich" },
     { name = "scikit-learn" },
     { name = "sentence-transformers" },
@@ -319,7 +321,6 @@ dependencies = [
 [package.optional-dependencies]
 dashboard = [
     { name = "jinja2" },
-    { name = "python-dotenv" },
     { name = "starlette" },
     { name = "uvicorn" },
 ]
@@ -337,6 +338,7 @@ integrations = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.0.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.3.0" },
     { name = "fastmcp", specifier = ">=3.1.1" },
     { name = "honcho-ai", marker = "extra == 'integrations'", specifier = ">=2.1.1" },
@@ -345,8 +347,8 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
-    { name = "python-dotenv", marker = "extra == 'dashboard'", specifier = ">=1.0.0" },
     { name = "redis", marker = "extra == 'integrations'", specifier = ">=6.4.0" },
+    { name = "regex", specifier = ">=2026.5.9" },
     { name = "rich", specifier = ">=14.3.3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
     { name = "scikit-learn", specifier = ">=1.8.0" },

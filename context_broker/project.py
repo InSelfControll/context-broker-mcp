@@ -8,6 +8,7 @@ from context_broker.project_ttc.codebase.api import (
     load_ignore_patterns,
     parse_ignore_file,
     resolve_project_root,
+    resolve_worktree_main_root,
     should_ignore,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "load_ignore_patterns",
     "find_project_root",
     "resolve_project_root",
+    "resolve_worktree_main_root",
     "get_project_name",
 ]

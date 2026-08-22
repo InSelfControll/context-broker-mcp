@@ -2,6 +2,7 @@
 Shared helpers for server task modules.
 """
 
+import asyncio
 from typing import Any
 
 from fastmcp import Context
@@ -94,7 +95,7 @@ async def progress(ctx: Context | None, message: str) -> None:
     try:
         await ctx.info(message)
     except Exception as e:
-        log(f"⚠️ Failed to send MCP progress notification: {e}", "WARN")
+        log(f"⚠ Failed to send MCP progress notification: {e}", "WARN")
 
 
 async def notify_error(ctx: Context | None, message: str) -> None:
@@ -104,4 +105,21 @@ async def notify_error(ctx: Context | None, message: str) -> None:
     try:
         await ctx.error(message)
     except Exception as e:
-        log(f"⚠️ Failed to send MCP error notification: {e}", "WARN")
+        log(f"⚠ Failed to send MCP error notification: {e}", "WARN")
+
+
+def stream_progress(ctx: Context | None, message: str) -> None:
+    """Schedule an MCP progress notification from synchronous code.
+
+    Index building and search run synchronously inside async tool handlers,
+    so they cannot ``await progress(...)`` directly. This schedules the
+    notification on the running event loop; it is delivered the next time the
+    handler yields. Safe no-op when there is no running loop or no ctx.
+    """
+    if not ctx or not ENABLE_PROGRESS_NOTIFICATIONS:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    loop.create_task(progress(ctx, message))
