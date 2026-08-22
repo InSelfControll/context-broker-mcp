@@ -24,6 +24,7 @@ from context_broker.config import (
     REDIS_URL,
 )
 from context_broker.context_ttc.tasks import chat_ledger
+from context_broker.context_ttc.tools.id_tools import safe_id
 from context_broker.identity import resolve_user_peer_id
 from context_broker.project import get_project_name
 
@@ -64,8 +65,7 @@ def reset_client_for_tests(client: Any | None = None) -> None:
 
 def _safe_id(value: str, default: str) -> str:
     """Normalize identifiers before keying Redis."""
-    candidate = (value or default).strip() or default
-    return "".join(c if c.isalnum() or c in {"-", "_", "."} else "-" for c in candidate)
+    return safe_id(value, default)
 
 
 def project_digest(project_root: str) -> str:
@@ -105,30 +105,32 @@ def _record_user_activity(
     session_id: str,
     timestamp: float,
 ) -> None:
-    """Track a per-user activity tick. Idempotent on first_seen; bumps
-    last_seen + request_count and appends to the per-user request audit log."""
+    """Track a per-user activity tick in one transaction.
+
+    first_seen is set only on the user's first request; last_seen is bumped
+    and request_count is incremented atomically (HINCRBY) so concurrent
+    requests can never lose a tick. The audit-log append rides in the same
+    MULTI/EXEC so it cannot drift from the counter.
+    """
     if not peer_id:
         return
-    client.sadd(_k("project", digest, "users"), peer_id)
     user_key = _user_key(digest, peer_id)
     existing = client.hgetall(user_key) or {}
-    mapping: dict[str, str] = {}
+    mapping: dict[str, str] = {"last_seen": repr(timestamp)}
     if "first_seen" not in existing:
         mapping["first_seen"] = repr(timestamp)
-    mapping["last_seen"] = repr(timestamp)
-    try:
-        prior = int(existing.get("request_count", "0") or "0")
-    except ValueError:
-        prior = 0
-    mapping["request_count"] = str(prior + 1)
-    client.hset(user_key, mapping=mapping)
-    client.rpush(
+    pipe = client.pipeline(transaction=True)
+    pipe.sadd(_k("project", digest, "users"), peer_id)
+    pipe.hset(user_key, mapping=mapping)
+    pipe.hincrby(user_key, "request_count", 1)
+    pipe.rpush(
         _user_requests_key(digest, peer_id),
         json.dumps(
             {"timestamp": timestamp, "session_id": session_id},
             ensure_ascii=False,
         ),
     )
+    pipe.execute()
 
 
 def get_context_backend_status() -> dict[str, Any]:
@@ -168,7 +170,6 @@ def save_redis_chat_context(
 
     safe_session = _safe_id(session_id, "default")
     full_session = f"{HONCHO_SESSION_PREFIX}-{safe_session}"
-    client.sadd(_k("project", digest, "sessions"), safe_session)
 
     user_id = _safe_id(resolve_user_peer_id(user_peer_id), "user")
     assistant_id = _safe_id(assistant_peer_id, HONCHO_ASSISTANT_PEER_ID)
@@ -182,9 +183,14 @@ def save_redis_chat_context(
     if not messages:
         raise ValueError("At least one of user_message or assistant_message is required")
 
+    # Register the session and append its messages in one MULTI/EXEC so a
+    # failure cannot leave a partially committed session behind.
     key = _session_key(digest, safe_session)
+    pipe = client.pipeline(transaction=True)
+    pipe.sadd(_k("project", digest, "sessions"), safe_session)
     for msg in messages:
-        client.rpush(key, json.dumps(msg, ensure_ascii=False))
+        pipe.rpush(key, json.dumps(msg, ensure_ascii=False))
+    pipe.execute()
 
     # Per-user activity audit: when each peer asked / answered.
     if user_message:

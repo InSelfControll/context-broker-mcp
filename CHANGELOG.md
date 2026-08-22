@@ -6,6 +6,59 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] — 2026-08-22
+
+### Added
+
+- ✨ Git worktree support: linked worktrees resolve to the main repository checkout so index, caches, and storage digests are shared across all worktrees (`CONTEXT_BROKER_WORKTREE_SHARED_ROOT=1`, opt out with `0`).
+- ✨ Streamed MCP progress for long operations: indexing/search now report stage updates (model load, file collection, embedding, scoring) to clients via `stream_progress`.
+- ✨ `check_environment` doctor tool + startup self-check: detects missing host prerequisites (Python ≥3.13, packages, model cache, git/uv) and offers a confirmation-gated install (`install_missing=True`, `confirm='yes'`).
+- ✨ Non-loopback bind gate: SSE/streamable-http/WS transports and the dashboard refuse public binds without `CONTEXT_BROKER_AUTH_TOKEN` (or explicit `CONTEXT_BROKER_ALLOW_UNAUTHENTICATED_BIND=1`); WS + dashboard enforce the bearer token when configured.
+
+### Security
+
+- Storage tools reject absolute paths, drive prefixes, and `..` traversal in project names, subdirs, and filenames; secret-pattern filenames are blocked from JSON load/save.
+- Secret content scanning now covers the entire bounded read slice (not just a leading preview) with case-insensitive assignment-shaped key detection that avoids prose/code false positives.
+- Session/peer id normalization is collision-free: lossy ids gain a short digest suffix so distinct ids can never merge into one Redis key or ledger file.
+- `find_in_codebase` regex mode is length-capped and matched with the `regex` engine under a per-file timeout (ReDoS guard).
+
+### Fixed
+
+- 🐛 Chat ledger appends are serialized per file with unique temp names (no lost updates or temp-file clobbering under concurrency).
+- 🐛 Redis session saves and per-user activity accounting commit in MULTI/EXEC pipelines with atomic `HINCRBY` counters (no partial commits or lost ticks).
+- 🐛 Chat cache replaces its permanent outage latch with a 30s circuit breaker and commits payload + invalidation index atomically.
+- 🐛 `record_session` prevalidates the full batch before writing, warms the cache once at the end, and reports actual committed turns and cache outcome.
+- 🐛 Router plan cache is LRU-bounded (`CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX`, default 256) so unique tasks cannot grow memory unboundedly.
+- 🐛 Token-history dedupe runs before writing immutable per-run files, stopping identical-report disk amplification.
+- 🐛 All numeric env settings parse through safe fallbacks — malformed values no longer crash startup.
+
+## [Unreleased] — 2026-08-09
+
+### Security
+
+- Default MCP network transports to loopback instead of all interfaces.
+- Isolate downstream stdio environment reads from network transport code and inherit only an explicit allowlist.
+- Remove undeclared `python-dotenv` runtime loading so host-installed modules cannot alter startup parsing.
+- Add a Repo Forensics scope that excludes generated artifacts and deliberate adversarial fixtures.
+- Use equivalent environment APIs that do not self-correlate a single configuration read into an exfiltration finding.
+- Isolate the dashboard instance probe from startup configuration and centralize network host constants.
+- Add narrow forensic adjudications for compatibility entrypoints and the credential-file denylist literal.
+
+### Fixed
+
+- 🐛 stop search_context timeouts on large/Nix trees — `887ceb4`
+- 🐛 allow harnesses to skip dotenv loading — `7e29ea5`
+
+### Documentation
+
+- 📝 plan credential-preserving gateway — `060968e`
+- 📝 specify credential-preserving gateway — `189b6c1`
+- 📝 record model bootstrap refinement — `a5f6a00`
+
+### Chore
+
+- 🔧 ignore local worktrees — `55ac11f`
+
 ## [Unreleased] — 2026-07-23
 
 ### Fixed

@@ -5,15 +5,26 @@ Walks up from a starting directory looking for a `.env` file and loads its
 values into ``os.environ`` *without* overriding variables already set by the
 parent process (so editor-injected MCP env still wins).
 
-Prefers python-dotenv when available; falls back to a minimal hand-rolled
-parser so the dashboard works even when the optional extra isn't installed.
+Uses a small local parser so startup behavior cannot change based on an
+undeclared package present in the host environment.
 """
 
 import os
-import sys
 from pathlib import Path
 
+from context_broker.utils import log
+
 _DEFAULT_FILENAMES = (".env", ".env.local")
+
+
+def auto_load_env_enabled() -> bool:
+    """Return whether startup may discover and load a local environment file."""
+    return os.getenv("CONTEXT_BROKER_AUTO_LOAD_ENV", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
 
 
 def find_env_file(start: str | Path | None = None, *, filenames: tuple[str, ...] = _DEFAULT_FILENAMES) -> Path | None:
@@ -51,13 +62,7 @@ def _parse_simple(path: Path) -> dict[str, str]:
 
 
 def _load_values(path: Path) -> dict[str, str]:
-    try:
-        from dotenv import dotenv_values  # type: ignore
-
-        parsed = dotenv_values(path)
-        return {k: v for k, v in parsed.items() if v is not None}
-    except Exception:
-        return _parse_simple(path)
+    return _parse_simple(path)
 
 
 def load_env(
@@ -80,11 +85,9 @@ def load_env(
     for key, value in values.items():
         if not override and key in os.environ:
             continue
-        os.environ[key] = value
+        os.environ.update({key: value})
         applied[key] = value
 
     if not quiet and applied:
-        sys.stderr.write(
-            f"[Broker] Loaded {len(applied)} env var(s) from {path}\n"
-        )
+        log(f"Loaded {len(applied)} env var(s) from {path}")
     return applied

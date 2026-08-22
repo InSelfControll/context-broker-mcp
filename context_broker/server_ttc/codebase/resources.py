@@ -54,7 +54,7 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
                     lines.append("")
                 return "\n".join(lines)
             except Exception as e:
-                log(f"⚠️ Auto-context error: {e}", "WARN")
+                log(f"⚠ Auto-context error: {e}", "WARN")
                 return ""
 
     @mcp.resource("codebase://token-counter")
@@ -69,7 +69,7 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
                     result = search_codebase(DEFAULT_QUERY, root, top_k=1)
                     report = report_from_result(result)
                 except Exception as e:
-                    log(f"⚠️ token_counter_resource init error: {e}", "WARN")
+                    log(f"⚠ token_counter_resource init error: {e}", "WARN")
                     return ""
             return "\n".join(
                 format_token_report_lines(report, title="📊 Token Counter (Editor Integration)")

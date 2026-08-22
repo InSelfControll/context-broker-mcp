@@ -42,7 +42,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
                 existing = result.get("existing_count", 0)
 
                 if status == "no_changes":
-                    await progress(ctx, "ℹ️ No commits found to document")
+                    await progress(ctx, "ℹ No commits found to document")
                     return "📄 No commits found to document.\n\nMake some commits first."
 
                 lines = [
@@ -69,7 +69,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
                     lines.append("Already documented (skipped):")
                     lines.append("")
                     for doc in existing_docs:
-                        lines.append(f"  ⏭️  {doc['feature']} — {doc['fix_type']} ({doc['path']})")
+                        lines.append(f"  ⏭  {doc['feature']} — {doc['fix_type']} ({doc['path']})")
                     lines.append("")
 
                 await progress(ctx, f"✅ Created {created} feature docs")
@@ -109,8 +109,8 @@ def register_docs_tools(mcp: FastMCP) -> None:
                 ]
 
                 if status == "no_commits":
-                    lines.extend(["", "ℹ️ No commits found to analyze."])
-                    await progress(ctx, "ℹ️ No commits found")
+                    lines.extend(["", "ℹ No commits found to analyze."])
+                    await progress(ctx, "ℹ No commits found")
                     return "\n".join(lines)
 
                 if status == "complete":
@@ -120,19 +120,19 @@ def register_docs_tools(mcp: FastMCP) -> None:
 
                 lines.extend([
                     "",
-                    f"⚠️  {missing_count} feature doc(s) missing:",
+                    f"⚠  {missing_count} feature doc(s) missing:",
                     "",
                 ])
 
                 for item in result.get("missing", []):
                     lines.append(f"  📂 Feature: {item['feature']}")
-                    lines.append(f"  🏷️  Type: {item['fix_type']}")
+                    lines.append(f"  🏷  Type: {item['fix_type']}")
                     lines.append(f"  📝 Commits: {item['commits']}")
                     lines.append(f"  💡 Suggested: {item['suggested_path']}")
                     lines.append("")
 
                 lines.append("💡 Run `ensure_feature_docs` to create them automatically.")
-                await progress(ctx, f"⚠️ {missing_count} docs missing")
+                await progress(ctx, f"⚠ {missing_count} docs missing")
                 return "\n".join(lines)
             except Exception as e:
                 error_msg = f"❌ Error scanning docs: {e}"

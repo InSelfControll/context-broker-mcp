@@ -35,7 +35,7 @@ def load_query_cache(project_root: str) -> dict[str, Any]:
             log(f"📦 Loaded cache with {len(state.QUERY_CACHE[project_root])} entries")
             return state.QUERY_CACHE[project_root]
     except Exception as e:
-        log(f"⚠️ Cache load failed: {e}", "WARN")
+        log(f"⚠ Cache load failed: {e}", "WARN")
         state.QUERY_CACHE[project_root] = {}
         return {}
 
@@ -51,7 +51,7 @@ def save_query_cache(project_root: str) -> None:
             json.dump(state.QUERY_CACHE[project_root], f, indent=2)
         log(f"💾 Saved cache with {len(state.QUERY_CACHE[project_root])} entries")
     except Exception as e:
-        log(f"⚠️ Cache save failed: {e}", "WARN")
+        log(f"⚠ Cache save failed: {e}", "WARN")
 
 
 def get_file_mtimes(paths: list[str]) -> dict[str, float]:

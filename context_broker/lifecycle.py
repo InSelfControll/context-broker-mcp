@@ -148,13 +148,13 @@ def _arm_parent_death_signal(expected_parent_pid: int) -> None:
         if result != 0:
             errno_value = ctypes.get_errno()
             log(
-                f"⚠️ Failed to arm parent-death signal (errno={errno_value}); "
+                f"⚠ Failed to arm parent-death signal (errno={errno_value}); "
                 "falling back to polling watchdog",
                 "WARN",
             )
             return
     except Exception as exc:
-        log(f"⚠️ Failed to arm parent-death signal: {exc}", "WARN")
+        log(f"⚠ Failed to arm parent-death signal: {exc}", "WARN")
         return
 
     if os.getppid() != expected_parent_pid:

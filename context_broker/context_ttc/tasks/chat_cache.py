@@ -12,6 +12,7 @@ regardless of which cross-chat context backend (`honcho` or `redis`) is selected
 import hashlib
 import json
 import os
+import time
 from typing import Any
 
 from context_broker.config import (
@@ -19,16 +20,19 @@ from context_broker.config import (
     REDIS_KEY_PREFIX,
     REDIS_URL,
 )
+from context_broker.context_ttc.tools.id_tools import safe_id
 
 _REDIS_CLIENT: Any = None
-_REDIS_UNAVAILABLE = False
+_REDIS_RETRY_AFTER: float = 0.0
+_REDIS_RETRY_BACKOFF_SECONDS = 30.0
+"""How long to wait before retrying Redis after a connection failure."""
 
 
 def reset_client_for_tests(client: Any | None = None, *, unavailable: bool = False) -> None:
     """Test hook: inject a fake Redis client or reset state."""
-    global _REDIS_CLIENT, _REDIS_UNAVAILABLE
+    global _REDIS_CLIENT, _REDIS_RETRY_AFTER
     _REDIS_CLIENT = client
-    _REDIS_UNAVAILABLE = unavailable
+    _REDIS_RETRY_AFTER = float("inf") if unavailable else 0.0
 
 
 def _enabled() -> bool:
@@ -36,9 +40,14 @@ def _enabled() -> bool:
 
 
 def _get_client() -> Any:
-    """Return a Redis client used solely for the chat cache."""
-    global _REDIS_CLIENT, _REDIS_UNAVAILABLE
-    if not _enabled() or _REDIS_UNAVAILABLE:
+    """Return a Redis client used solely for the chat cache.
+
+    A connection failure trips a short circuit breaker: the cache backs off
+    for _REDIS_RETRY_BACKOFF_SECONDS and then retries, instead of latching
+    off until process restart.
+    """
+    global _REDIS_CLIENT, _REDIS_RETRY_AFTER
+    if not _enabled() or time.monotonic() < _REDIS_RETRY_AFTER:
         return None
     if _REDIS_CLIENT is not None:
         return _REDIS_CLIENT
@@ -53,9 +62,10 @@ def _get_client() -> Any:
         )
         client.ping()
         _REDIS_CLIENT = client
+        _REDIS_RETRY_AFTER = 0.0
         return _REDIS_CLIENT
     except Exception:
-        _REDIS_UNAVAILABLE = True
+        _REDIS_RETRY_AFTER = time.monotonic() + _REDIS_RETRY_BACKOFF_SECONDS
         return None
 
 
@@ -65,8 +75,7 @@ def _project_digest(project_root: str) -> str:
 
 
 def _safe_id(session_id: str) -> str:
-    candidate = (session_id or "default").strip() or "default"
-    return "".join(c if c.isalnum() or c in {"-", "_", "."} else "-" for c in candidate)
+    return safe_id(session_id, "default")
 
 
 def _signature(**kwargs: Any) -> str:
@@ -117,18 +126,19 @@ def put(
     signature = _signature(**params)
     key = _key(project_root, session_id, signature)
     try:
-        # SET with EX in one round-trip so the key can never persist without a
-        # TTL (avoids the SET/EXPIRE race that left stale payloads on partial
-        # failure).
-        client.set(
+        # Payload + per-session invalidation index commit in one MULTI/EXEC so
+        # a partial failure can never orphan a payload the invalidator cannot
+        # discover. SET carries EX inline so no key persists without a TTL.
+        idx = _index_key(project_root, session_id)
+        pipe = client.pipeline(transaction=True)
+        pipe.set(
             key,
             json.dumps(payload, ensure_ascii=False, default=str),
             ex=CHAT_CACHE_TTL_SECONDS,
         )
-        # Maintain a per-session index so invalidation can wipe every signature.
-        idx = _index_key(project_root, session_id)
-        client.sadd(idx, signature)
-        client.expire(idx, CHAT_CACHE_TTL_SECONDS)
+        pipe.sadd(idx, signature)
+        pipe.expire(idx, CHAT_CACHE_TTL_SECONDS)
+        pipe.execute()
         return True
     except Exception:
         return False
@@ -144,18 +154,21 @@ def invalidate(project_root: str, session_id: str) -> int:
         signatures = client.smembers(idx) or set()
     except Exception:
         return 0
-    removed = 0
-    for signature in signatures:
+    if not signatures:
         try:
-            client.delete(_key(project_root, session_id, signature))
-            removed += 1
+            client.delete(idx)
         except Exception:
-            continue
+            pass
+        return 0
+    pipe = client.pipeline(transaction=True)
+    for signature in signatures:
+        pipe.delete(_key(project_root, session_id, signature))
+    pipe.delete(idx)
     try:
-        client.delete(idx)
+        results = pipe.execute()
     except Exception:
-        pass
-    return removed
+        return 0
+    return sum(1 for r in (results or [])[:-1] if r)
 
 
 def status() -> dict[str, Any]:

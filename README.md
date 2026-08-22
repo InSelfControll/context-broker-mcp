@@ -307,6 +307,7 @@ For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
 | `ensure_feature_docs_tool(project_root?, since?)` | Ensure docs exist for recent feature changes |
 | `scan_missing_docs_tool(project_root?, since?)` | Scan for feature changes missing documentation |
 | `get_docs_stats_tool(project_root?)` | Get statistics about feature documentation |
+| `check_environment(install_missing?, confirm?)` | Doctor: detect anything missing on this machine for running the MCP; offers a confirmation-gated install of missing required packages |
 
 ### Available Resources
 
@@ -408,6 +409,12 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
 | `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session by default | `1` |
 | `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
+| `CONTEXT_BROKER_WORKTREE_SHARED_ROOT` | Resolve linked git worktrees to the main checkout so index/cache/storage are shared across worktrees | `1` |
+| `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX` | Maximum cached router plans (LRU bound) | `256` |
+| `CONTEXT_BROKER_REGEX_MAX_PATTERN_CHARS` | Maximum caller regex length for `find_in_codebase` | `2000` |
+| `CONTEXT_BROKER_REGEX_MATCH_TIMEOUT_SECONDS` | Per-file regex match timeout (ReDoS guard) | `2.0` |
+| `CONTEXT_BROKER_AUTH_TOKEN` | Bearer token required on WS transport and dashboard when set | *(empty)* |
+| `CONTEXT_BROKER_ALLOW_UNAUTHENTICATED_BIND` | Permit non-loopback binds without `AUTH_TOKEN` (trusted networks only) | `0` |
 
 By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
 It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.

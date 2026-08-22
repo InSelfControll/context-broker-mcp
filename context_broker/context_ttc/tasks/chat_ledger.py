@@ -30,7 +30,9 @@ File schema::
 import hashlib
 import json
 import os
+import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +43,7 @@ from context_broker.config import (
     StorageMode,
 )
 from context_broker.project import get_project_name
+from context_broker.context_ttc.tools.id_tools import safe_id
 
 
 def _digest(project_root: str) -> str:
@@ -50,8 +53,7 @@ def _digest(project_root: str) -> str:
 
 
 def _safe_session(session_id: str) -> str:
-    candidate = (session_id or "default").strip() or "default"
-    return "".join(c if c.isalnum() or c in {"-", "_", "."} else "-" for c in candidate)
+    return safe_id(session_id, "default")
 
 
 def ledger_paths(project_root: str, session_id: str) -> list[Path]:
@@ -84,10 +86,27 @@ def _read(path: Path) -> dict[str, Any]:
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Unique temp name per writer: two writers appending concurrently must
+    # never replace or delete each other's temp file.
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+_LEDGER_LOCKS: dict[str, threading.Lock] = {}
+_LEDGER_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.Lock:
+    """Per-ledger-file lock serializing read-modify-write within this process."""
+    key = str(path)
+    with _LEDGER_LOCKS_GUARD:
+        lock = _LEDGER_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LEDGER_LOCKS[key] = lock
+        return lock
 
 
 def append_turn(
@@ -113,15 +132,18 @@ def append_turn(
 
     written: list[str] = []
     for path in ledger_paths(project_root, session_id):
-        existing = _read(path)
-        existing.setdefault("project", project_meta)
-        existing.setdefault("session_id", safe_session)
-        existing.setdefault("messages", [])
-        if not isinstance(existing["messages"], list):
-            existing["messages"] = []
-        existing["messages"].extend(messages)
-        existing["updated_at"] = time.time()
-        _atomic_write(path, existing)
+        # Serialize the read-modify-write per ledger file so concurrent
+        # in-process appends cannot overwrite each other's messages.
+        with _lock_for(path):
+            existing = _read(path)
+            existing.setdefault("project", project_meta)
+            existing.setdefault("session_id", safe_session)
+            existing.setdefault("messages", [])
+            if not isinstance(existing["messages"], list):
+                existing["messages"] = []
+            existing["messages"].extend(messages)
+            existing["updated_at"] = time.time()
+            _atomic_write(path, existing)
         written.append(str(path))
     return written
 

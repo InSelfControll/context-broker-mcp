@@ -80,7 +80,7 @@ def save_index_cache(
         log(f"💾 Saved index cache ({len(paths)} files) → {meta_path}")
         return True
     except Exception as exc:
-        log(f"⚠️ Index cache save failed: {exc}", "WARN")
+        log(f"⚠ Index cache save failed: {exc}", "WARN")
         for path in (tmp_meta, tmp_vectors):
             try:
                 path.unlink(missing_ok=True)
@@ -111,15 +111,15 @@ def load_index_cache(
         with open(meta_path, encoding="utf-8") as handle:
             meta = json.load(handle)
     except Exception as exc:
-        log(f"⚠️ Index cache meta load failed: {exc}", "WARN")
+        log(f"⚠ Index cache meta load failed: {exc}", "WARN")
         return None
 
     if int(meta.get("version", 0)) != _INDEX_CACHE_VERSION:
-        log("⚠️ Index cache version mismatch; rebuilding", "WARN")
+        log("⚠ Index cache version mismatch; rebuilding", "WARN")
         return None
     if meta.get("model") != model_name:
         log(
-            f"⚠️ Index cache model mismatch "
+            f"⚠ Index cache model mismatch "
             f"(cached={meta.get('model')!r}, want={model_name!r}); rebuilding",
             "WARN",
         )
@@ -140,15 +140,15 @@ def load_index_cache(
     try:
         embeddings = np.load(vectors_path, allow_pickle=False)
     except Exception as exc:
-        log(f"⚠️ Index cache vectors load failed: {exc}", "WARN")
+        log(f"⚠ Index cache vectors load failed: {exc}", "WARN")
         return None
 
     expected_shape = meta.get("embedding_shape")
     if expected_shape is not None and list(embeddings.shape) != list(expected_shape):
-        log("⚠️ Index cache embedding shape mismatch; rebuilding", "WARN")
+        log("⚠ Index cache embedding shape mismatch; rebuilding", "WARN")
         return None
     if embeddings.shape[0] != len(current_paths):
-        log("⚠️ Index cache row count mismatch; rebuilding", "WARN")
+        log("⚠ Index cache row count mismatch; rebuilding", "WARN")
         return None
 
     log(f"⚡ Loaded index cache ({len(current_paths)} files) from disk")
@@ -171,5 +171,5 @@ def clear_index_cache(project_root: str) -> bool:
                 path.unlink()
                 removed = True
         except OSError as exc:
-            log(f"⚠️ Failed to remove index cache {path}: {exc}", "WARN")
+            log(f"⚠ Failed to remove index cache {path}: {exc}", "WARN")
     return removed

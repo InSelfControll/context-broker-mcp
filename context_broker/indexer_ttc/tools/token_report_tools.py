@@ -68,20 +68,17 @@ def persist_token_report(project_root: str, report: dict[str, Any]) -> None:
     except Exception:
         pass
 
-    try:
-        project_name = get_project_name(root_path)
-        save_token_counter_run(project_name, root_path, enriched_report)
-        state.LAST_TOKEN_REPORTS[root_path] = enriched_report
-    except Exception as e:
-        log(f"⚠️ Failed to persist token counter run: {e}", "WARN")
-
+    state.LAST_TOKEN_REPORTS[root_path] = enriched_report
+    # Deduplicate BEFORE creating an immutable run file, so identical repeated
+    # searches do not accumulate token-history files on disk.
     if report_hash and state.LAST_PERSISTED_TOKEN_REPORT_HASHES.get(root_path) == report_hash:
         return
 
     try:
         project_name = get_project_name(root_path)
+        save_token_counter_run(project_name, root_path, enriched_report)
         save_token_counter_report(project_name, root_path, enriched_report)
         if report_hash:
             state.LAST_PERSISTED_TOKEN_REPORT_HASHES[root_path] = report_hash
     except Exception as e:
-        log(f"⚠️ Failed to persist token counter report: {e}", "WARN")
+        log(f"⚠ Failed to persist token counter report: {e}", "WARN")

@@ -105,10 +105,10 @@ def register_router_tools(mcp: FastMCP) -> None:
     ) -> str:
         """Backward-compatible helper: run one selected tool through the safety gate."""
         with tracked_activity():
-            log(f"🛡️ execute_selected_tool called: tool_id={tool_id}")
+            log(f"🛡 execute_selected_tool called: tool_id={tool_id}")
             arguments = _json_loads_object(arguments_json)
             result = execute_selected_tool_api(tool_id, arguments, confirmed=confirmed)
-            await progress(ctx, f"🛡️ Router execution status: {result.get('status')}")
+            await progress(ctx, f"🛡 Router execution status: {result.get('status')}")
             return json.dumps(result, indent=2, ensure_ascii=False, default=str)
 
     @mcp.tool()

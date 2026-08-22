@@ -204,7 +204,7 @@ def _generate_doc_content(
     breaking = [c for c in commits if c["is_breaking"]]
     if breaking:
         lines.extend([
-            "## ⚠️ Breaking Changes",
+            "## ⚠ Breaking Changes",
             "",
         ])
         for commit in breaking:
@@ -256,7 +256,7 @@ def generate_feature_docs(
 
     commits = _get_recent_commits(since=since, max_count=max_count, cwd=str(root))
     if not commits:
-        log("ℹ️ No commits found to document.")
+        log("ℹ No commits found to document.")
         return []
 
     # Group commits by (feature, type)

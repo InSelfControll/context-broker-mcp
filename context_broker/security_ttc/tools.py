@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import re
 
 from context_broker.config import SECRET_ENV_KEY_PATTERNS, SECRET_FILE_PATTERNS
 from context_broker.utils import log
@@ -37,25 +38,60 @@ def _match_secret_pattern(rel_path: str) -> tuple[bool, str]:
     return False, ""
 
 
+def _classify_signatures() -> tuple[list[tuple[str, "re.Pattern[str]"]], list[str]]:
+    """Split signatures into key/value patterns and value-shaped substrings.
+
+    Key signatures (e.g. "API_KEY", "PASSWORD", "TOKEN=") must appear as an
+    assignment at the start of a line (``KEY=value`` / ``key: value``, with
+    optional ``export``/quotes, case-insensitive, no space before the
+    operator) so prose and ordinary code assignments like
+    ``token = create_token(...)`` are not blocked. Value-shaped signatures
+    ("Bearer ", "_authToken", "_auth") stay plain substring matches.
+    """
+    key_sigs: list[tuple[str, "re.Pattern[str]"]] = []
+    value_sigs: list[str] = []
+    for signature in SECRET_ENV_KEY_PATTERNS:
+        if re.fullmatch(r"[A-Z0-9_]+=?", signature):
+            base = signature.rstrip("=")
+            rx = re.compile(
+                r"^\s*(?:export\s+)?[\"']?[\w.\-]*"
+                + re.escape(base)
+                + r"[\w.\-]*[\"']?[:=]",
+                re.IGNORECASE,
+            )
+            key_sigs.append((signature, rx))
+        else:
+            value_sigs.append(signature)
+    # Longest first so more specific signatures win the audit reason.
+    key_sigs.sort(key=lambda item: len(item[0]), reverse=True)
+    value_sigs.sort(key=len, reverse=True)
+    return key_sigs, value_sigs
+
+
+_KEY_SIGNATURES, _VALUE_SIGNATURES = _classify_signatures()
+
+
 def _scan_content_for_secrets(content: str) -> tuple[bool, str]:
     """Scan file content for secret-key signatures.
 
     This catches renamed .env files and other secret-bearing files that
-    don't match filename patterns.
+    don't match filename patterns. Callers pass a size-bounded slice, so
+    every line of it is scanned (not just the top) — secrets are not always
+    at the top of a file. Key matching is case-insensitive but requires an
+    assignment shape to avoid blocking prose that merely mentions secrets.
 
     Returns:
         (is_secret, matched_signature) tuple.
     """
-    lines = content.splitlines()
-    # Only scan first 100 lines — secrets are usually at the top of env files
-    for line in lines[:100]:
+    for line in content.splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
-        # Sort signatures by length descending so longer/more specific
-        # patterns match first (e.g., "SECRET_KEY" before "SECRET")
-        for signature in sorted(SECRET_ENV_KEY_PATTERNS, key=len, reverse=True):
+        for signature in _VALUE_SIGNATURES:
             if signature in stripped:
+                return True, signature
+        for signature, rx in _KEY_SIGNATURES:
+            if rx.match(line):
                 return True, signature
     return False, ""
 

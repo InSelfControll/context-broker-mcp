@@ -10,7 +10,7 @@ import os
 
 def _get_env_int(name: str, default: int) -> int:
     """Parse an integer env var with a safe fallback."""
-    raw = os.environ.get(name)
+    raw = os.getenv(name)
     if raw is None:
         return default
     try:
@@ -21,7 +21,7 @@ def _get_env_int(name: str, default: int) -> int:
 
 def _get_env_float(name: str, default: float) -> float:
     """Parse a float env var with a safe fallback."""
-    raw = os.environ.get(name)
+    raw = os.getenv(name)
     if raw is None:
         return default
     try:
@@ -38,7 +38,7 @@ TOTAL_CORES = os.cpu_count() or 1
 """Number of CPU cores available for parallel processing."""
 WORKER_CORES = max(1, TOTAL_CORES // 2)
 """Number of CPU cores used for indexing/search (half of available cores)."""
-MODEL_LOCAL_ONLY: bool = os.environ.get("CONTEXT_BROKER_LOCAL_ONLY", "0").lower() in {
+MODEL_LOCAL_ONLY: bool = os.getenv("CONTEXT_BROKER_LOCAL_ONLY", "0").lower() in {
     "1",
     "true",
     "yes",
@@ -47,11 +47,15 @@ MODEL_LOCAL_ONLY: bool = os.environ.get("CONTEXT_BROKER_LOCAL_ONLY", "0").lower(
 """Prefer cache-only model loading, with one bootstrap download on a cache miss."""
 
 # Performance optimizations for PyTorch and NumPy
-os.environ["OMP_NUM_THREADS"] = str(WORKER_CORES)
-os.environ["MKL_NUM_THREADS"] = str(WORKER_CORES)
-os.environ["TORCH_NUM_THREADS"] = str(WORKER_CORES)
-os.environ["TQDM_DISABLE"] = "1"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ.update(
+    {
+        "OMP_NUM_THREADS": str(WORKER_CORES),
+        "MKL_NUM_THREADS": str(WORKER_CORES),
+        "TORCH_NUM_THREADS": str(WORKER_CORES),
+        "TQDM_DISABLE": "1",
+        "TF_CPP_MIN_LOG_LEVEL": "3",
+    }
+)
 
 
 # =============================================================================
@@ -378,10 +382,10 @@ class StorageMode:
 
 
 # Get storage configuration from environment
-STORAGE_MODE: str = os.environ.get("CONTEXT_BROKER_STORAGE_MODE", StorageMode.BOTH)
+STORAGE_MODE: str = os.getenv("CONTEXT_BROKER_STORAGE_MODE", StorageMode.BOTH)
 """Storage mode: 'global', 'in-project', or 'both'."""
 
-STORAGE_BASE_DIR: str = os.environ.get(
+STORAGE_BASE_DIR: str = os.getenv(
     "CONTEXT_BROKER_STORAGE_DIR", os.path.expanduser("~/.context-broker")
 )
 """Base directory for global storage mode."""
@@ -395,14 +399,26 @@ TOKEN_COUNTER_FILENAME: str = "token-counter-latest.json"
 TOKEN_COUNTER_RUNS_SUBDIR: str = "_internal/token-runs"
 """Internal subdirectory for append-only token counter run reports."""
 
-DEFAULT_QUERY: str = os.environ.get(
+DEFAULT_QUERY: str = os.getenv(
     "CONTEXT_BROKER_DEFAULT_QUERY", "main entry point configuration setup"
 )
 """Default query used for auto-context resource."""
 
-DEFAULT_PROJECT_ROOT: str = os.environ.get("CONTEXT_BROKER_PROJECT_ROOT", "")
+DEFAULT_PROJECT_ROOT: str = os.getenv("CONTEXT_BROKER_PROJECT_ROOT", "")
 """Default project root from environment variable."""
-ENABLE_PROGRESS_NOTIFICATIONS: bool = os.environ.get(
+
+WORKTREE_SHARED_ROOT: bool = os.getenv(
+    "CONTEXT_BROKER_WORKTREE_SHARED_ROOT", "1"
+).lower() in {"1", "true", "yes", "on"}
+"""Resolve linked git worktree paths to the main repository checkout so the
+index, caches, and storage digest are shared across all worktrees of a repo.
+Set to 0 to index each worktree as its own project."""
+
+ROUTER_PLAN_CACHE_MAX: int = max(
+    0, _get_env_int("CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX", 256)
+)
+"""Maximum cached router plans (LRU). Bounds memory growth from unique tasks."""
+ENABLE_PROGRESS_NOTIFICATIONS: bool = os.getenv(
     "CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS", "1"
 ).lower() in {"1", "true", "yes", "on"}
 """Enable MCP progress notifications (token summaries visible in MCP clients). Set 0 to reduce chatter/latency."""
@@ -412,16 +428,35 @@ ENABLE_PROGRESS_NOTIFICATIONS: bool = os.environ.get(
 # TRANSPORT CONFIGURATION
 # =============================================================================
 
-TRANSPORT: str = os.environ.get("CONTEXT_BROKER_TRANSPORT", "stdio")
+TRANSPORT: str = os.getenv("CONTEXT_BROKER_TRANSPORT", "stdio")
 """Transport protocol: 'stdio', 'sse', 'streamable-http', or 'ws'."""
 
-HOST: str = os.environ.get("CONTEXT_BROKER_HOST", "0.0.0.0")
-"""Host address for network transports (sse, streamable-http, ws)."""
+UCR_PUBLIC_SURFACE_ONLY: bool = os.getenv(
+    "CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY", "0"
+).lower() in {"1", "true", "yes", "on"}
+"""Expose only the minimal UCR router surface when enabled."""
 
-PORT: int = int(os.environ.get("CONTEXT_BROKER_PORT", "8765"))
+LOOPBACK_HOST: str = "127.0.0.1"
+UNSPECIFIED_HOSTS: frozenset[str] = frozenset({"0.0.0.0", "::"})
+HOST: str = os.getenv("CONTEXT_BROKER_HOST", LOOPBACK_HOST)
+"""Host address for network transports; defaults to loopback for safe local use."""
+
+PORT: int = _get_env_int("CONTEXT_BROKER_PORT", 8765)
 """Port for network transports (sse, streamable-http, ws)."""
 
-EXIT_WHEN_PARENT_DIES: bool = os.environ.get(
+AUTH_TOKEN: str = os.getenv("CONTEXT_BROKER_AUTH_TOKEN", "")
+"""Shared bearer token for network surfaces (WS transport + dashboard).
+
+When set, WebSocket connections and dashboard HTTP requests must present it
+(`Authorization: Bearer <token>` or `?token=<token>`). When unset, non-
+loopback binds are refused unless explicitly allowed."""
+
+ALLOW_UNAUTHENTICATED_BIND: bool = os.getenv(
+    "CONTEXT_BROKER_ALLOW_UNAUTHENTICATED_BIND", "0"
+).lower() in {"1", "true", "yes", "on"}
+"""Permit non-loopback binds without AUTH_TOKEN (trusted networks only)."""
+
+EXIT_WHEN_PARENT_DIES: bool = os.getenv(
     "CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES",
     "1",
 ).lower() in {"1", "true", "yes", "on"}
@@ -450,7 +485,7 @@ IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS: float = max(
 # MODEL CONFIGURATION
 # =============================================================================
 
-EMBEDDING_MODEL: str = os.environ.get(
+EMBEDDING_MODEL: str = os.getenv(
     "CONTEXT_BROKER_EMBEDDING_MODEL", "all-MiniLM-L6-v2"
 )
 """Sentence transformer model used for embeddings.
@@ -464,7 +499,7 @@ Missing models are downloaded automatically on first use.
 ENCODING_MODEL: str = "cl100k_base"
 """Tiktoken encoding model for token counting."""
 
-MODEL_DEVICE: str = os.environ.get("CONTEXT_BROKER_DEVICE", "cpu")
+MODEL_DEVICE: str = os.getenv("CONTEXT_BROKER_DEVICE", "cpu")
 """Torch device for the embedding model (e.g. "cpu", "cuda", "mps")."""
 
 # ---------------------------------------------------------------------------
@@ -476,15 +511,15 @@ MODEL_DEVICE: str = os.environ.get("CONTEXT_BROKER_DEVICE", "cpu")
 # ``get_storage_config`` tool response.
 # ---------------------------------------------------------------------------
 
-LLM_MODEL: str = os.environ.get("CONTEXT_BROKER_LLM_MODEL", "")
+LLM_MODEL: str = os.getenv("CONTEXT_BROKER_LLM_MODEL", "")
 """Optional LLM model identifier (e.g. "llama3", "gpt-4o", "claude-3-opus").
 Exposed via the storage-config tool so MCP clients can discover it."""
 
-LLM_BASE_URL: str = os.environ.get("CONTEXT_BROKER_LLM_BASE_URL", "")
+LLM_BASE_URL: str = os.getenv("CONTEXT_BROKER_LLM_BASE_URL", "")
 """Optional base URL for an LLM API endpoint (e.g. "http://localhost:11434/v1"
 for Ollama, or an OpenAI-compatible endpoint)."""
 
-LLM_API_KEY: str = os.environ.get("CONTEXT_BROKER_LLM_API_KEY", "")
+LLM_API_KEY: str = os.getenv("CONTEXT_BROKER_LLM_API_KEY", "")
 """Optional API key for the LLM endpoint. Leave empty for local models."""
 
 DEFAULT_TOP_K: int = 5
@@ -492,9 +527,9 @@ DEFAULT_TOP_K: int = 5
 
 BATCH_SIZE: int = 32
 """Batch size for embedding generation."""
-INDEX_FILE_MAX_CHARS: int = int(os.environ.get("CONTEXT_BROKER_INDEX_FILE_MAX_CHARS", "12000"))
+INDEX_FILE_MAX_CHARS: int = _get_env_int("CONTEXT_BROKER_INDEX_FILE_MAX_CHARS", 12000)
 """Maximum characters read per file for indexing/token estimation."""
-INDEX_FOLLOW_SYMLINKS: bool = os.environ.get(
+INDEX_FOLLOW_SYMLINKS: bool = os.getenv(
     "CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS", "0"
 ).lower() in {"1", "true", "yes", "on"}
 """Follow directory/file symlinks while collecting files (default: off).
@@ -508,20 +543,30 @@ INDEX_MAX_FILE_BYTES: int = max(
     _get_env_int("CONTEXT_BROKER_INDEX_MAX_FILE_BYTES", 2_000_000),
 )
 """Skip individual files larger than this many bytes during collection (0 = no cap)."""
-INDEX_DISK_CACHE_ENABLED: bool = os.environ.get(
+INDEX_DISK_CACHE_ENABLED: bool = os.getenv(
     "CONTEXT_BROKER_INDEX_DISK_CACHE", "1"
 ).lower() in {"1", "true", "yes", "on"}
 """Persist corpus embeddings under ``.cache/`` so idle cleanup / restarts skip full re-encode."""
-RESULT_FILE_MAX_CHARS: int = int(os.environ.get("CONTEXT_BROKER_RESULT_FILE_MAX_CHARS", "40000"))
+RESULT_FILE_MAX_CHARS: int = _get_env_int("CONTEXT_BROKER_RESULT_FILE_MAX_CHARS", 40000)
 """Maximum characters read per file before snippet extraction."""
-RESULT_SNIPPET_WINDOW_CHARS: int = int(
-    os.environ.get("CONTEXT_BROKER_RESULT_SNIPPET_WINDOW_CHARS", "3000")
+RESULT_SNIPPET_WINDOW_CHARS: int = _get_env_int(
+    "CONTEXT_BROKER_RESULT_SNIPPET_WINDOW_CHARS", 3000
 )
 """Character window around the most relevant query term per file."""
-RESULT_MAX_TOKENS_PER_FILE: int = int(
-    os.environ.get("CONTEXT_BROKER_RESULT_MAX_TOKENS_PER_FILE", "700")
+RESULT_MAX_TOKENS_PER_FILE: int = _get_env_int(
+    "CONTEXT_BROKER_RESULT_MAX_TOKENS_PER_FILE", 700
 )
 """Hard token cap per returned file snippet."""
+
+REGEX_MAX_PATTERN_CHARS: int = max(
+    1, _get_env_int("CONTEXT_BROKER_REGEX_MAX_PATTERN_CHARS", 2000)
+)
+"""Maximum caller-supplied regex pattern length for find_in_codebase."""
+
+REGEX_MATCH_TIMEOUT_SECONDS: float = max(
+    0.1, _get_env_float("CONTEXT_BROKER_REGEX_MATCH_TIMEOUT_SECONDS", 2.0)
+)
+"""Per-file regex match timeout (requires the third-party regex engine)."""
 
 
 # =============================================================================
@@ -541,10 +586,10 @@ CACHE_FILE: str = "context-broker.json"
 # REDIS CONFIGURATION (used by the Redis cross-chat context backend only)
 # =============================================================================
 
-REDIS_URL: str = os.environ.get("CONTEXT_BROKER_REDIS_URL", "")
+REDIS_URL: str = os.getenv("CONTEXT_BROKER_REDIS_URL", "")
 """Redis connection URL used when CONTEXT_BROKER_CONTEXT_BACKEND=redis."""
 
-REDIS_KEY_PREFIX: str = os.environ.get("CONTEXT_BROKER_REDIS_KEY_PREFIX", "context-broker")
+REDIS_KEY_PREFIX: str = os.getenv("CONTEXT_BROKER_REDIS_KEY_PREFIX", "context-broker")
 """Prefix for Redis keys so multiple deployments can share one Redis instance safely."""
 
 CHAT_CACHE_TTL_SECONDS: int = max(
@@ -556,7 +601,7 @@ CHAT_CACHE_TTL_SECONDS: int = max(
 of which cross-chat context backend is selected.
 """
 
-AUTO_WARM_CACHE_ON_SAVE: bool = os.environ.get(
+AUTO_WARM_CACHE_ON_SAVE: bool = os.getenv(
     "CONTEXT_BROKER_AUTO_WARM_CACHE_ON_SAVE", "1"
 ).lower() in {"1", "true", "yes", "on"}
 """When enabled (the default), every save_chat_context / record_turn call
@@ -572,23 +617,23 @@ Set to 0 to fall back to invalidate-only behavior.
 # CROSS-CHAT CONTEXT CONFIGURATION
 # =============================================================================
 
-CONTEXT_BACKEND: str = os.environ.get("CONTEXT_BROKER_CONTEXT_BACKEND", "none").lower()
+CONTEXT_BACKEND: str = os.getenv("CONTEXT_BROKER_CONTEXT_BACKEND", "none").lower()
 """Cross-chat context backend: 'none', 'honcho', or 'redis'.
 
 'redis' uses Redis as a Honcho-equivalent store for cross-session context
 sharing — messages are keyed by project + session_id and survive across chats.
 """
 
-HONCHO_WORKSPACE_ID: str = os.environ.get("CONTEXT_BROKER_HONCHO_WORKSPACE_ID", "context-broker")
+HONCHO_WORKSPACE_ID: str = os.getenv("CONTEXT_BROKER_HONCHO_WORKSPACE_ID", "context-broker")
 """Honcho workspace id used when CONTEXT_BROKER_CONTEXT_BACKEND=honcho."""
 
-HONCHO_SESSION_PREFIX: str = os.environ.get("CONTEXT_BROKER_HONCHO_SESSION_PREFIX", "context-broker")
+HONCHO_SESSION_PREFIX: str = os.getenv("CONTEXT_BROKER_HONCHO_SESSION_PREFIX", "context-broker")
 """Prefix applied to Honcho session ids created by this MCP server."""
 
-HONCHO_USER_PEER_ID: str = os.environ.get("CONTEXT_BROKER_HONCHO_USER_PEER_ID", "user")
+HONCHO_USER_PEER_ID: str = os.getenv("CONTEXT_BROKER_HONCHO_USER_PEER_ID", "user")
 """Default Honcho peer id for user-authored messages."""
 
-HONCHO_ASSISTANT_PEER_ID: str = os.environ.get(
+HONCHO_ASSISTANT_PEER_ID: str = os.getenv(
     "CONTEXT_BROKER_HONCHO_ASSISTANT_PEER_ID", "assistant"
 )
 """Default Honcho peer id for assistant-authored messages."""
@@ -596,7 +641,7 @@ HONCHO_ASSISTANT_PEER_ID: str = os.environ.get(
 HONCHO_CONTEXT_TOKENS: int = max(1, _get_env_int("CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS", 2000))
 """Default token budget when loading Honcho session context."""
 
-HONCHO_LIMIT_TO_SESSION: bool = os.environ.get(
+HONCHO_LIMIT_TO_SESSION: bool = os.getenv(
     "CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION", "1"
 ).lower() in {
     "1",
@@ -611,7 +656,7 @@ HONCHO_LIMIT_TO_SESSION: bool = os.environ.get(
 # USER IDENTITY (who is asking the question?)
 # ---------------------------------------------------------------------------
 
-USE_ACCOUNT_NAME: bool = os.environ.get(
+USE_ACCOUNT_NAME: bool = os.getenv(
     "CONTEXT_BROKER_USE_ACCOUNT_NAME", "0"
 ).lower() in {"1", "true", "yes", "on"}
 """When enabled, default the user peer id to the OS account name instead of
@@ -620,7 +665,7 @@ generic. Explicit ``user_peer_id`` arguments to ``save_chat_context`` /
 ``load_chat_context`` always win.
 """
 
-ACCOUNT_NAME_OVERRIDE: str = os.environ.get("CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE", "")
+ACCOUNT_NAME_OVERRIDE: str = os.getenv("CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE", "")
 """Explicit override for the resolved account name. Takes priority over
 ``getpass.getuser()`` when ``CONTEXT_BROKER_USE_ACCOUNT_NAME`` is enabled.
 """
@@ -630,8 +675,8 @@ ACCOUNT_NAME_OVERRIDE: str = os.environ.get("CONTEXT_BROKER_ACCOUNT_NAME_OVERRID
 # DASHBOARD CONFIGURATION (web-only cross-chat viewer)
 # =============================================================================
 
-DASHBOARD_HOST: str = os.environ.get("CONTEXT_BROKER_DASHBOARD_HOST", "127.0.0.1")
+DASHBOARD_HOST: str = os.getenv("CONTEXT_BROKER_DASHBOARD_HOST", LOOPBACK_HOST)
 """Host bind address for the web-only cross-chat dashboard."""
 
-DASHBOARD_PORT: int = int(os.environ.get("CONTEXT_BROKER_DASHBOARD_PORT", "8770"))
+DASHBOARD_PORT: int = _get_env_int("CONTEXT_BROKER_DASHBOARD_PORT", 8770)
 """Port for the web-only cross-chat dashboard."""

@@ -12,6 +12,7 @@ from context_broker.server_ttc.tools.helpers import (
     format_token_efficiency_lines,
     notify_error,
     progress,
+    stream_progress,
 )
 from context_broker.utils import log
 
@@ -32,7 +33,12 @@ def register_search_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root)
             try:
                 await progress(ctx, f"📁 Project root resolved to: {root}")
-                result = search_codebase(query, root, top_k=5)
+                result = search_codebase(
+                    query,
+                    root,
+                    top_k=5,
+                    progress_callback=lambda msg: stream_progress(ctx, msg),
+                )
                 tok_line = format_search_summary_line(
                     result["total_tokens"],
                     result["context_tokens"],
@@ -91,6 +97,7 @@ def register_search_tools(mcp: FastMCP) -> None:
                     "main entry point configuration setup architecture",
                     root,
                     top_k=5,
+                    progress_callback=lambda msg: stream_progress(ctx, msg),
                 )
                 tok_line = format_search_summary_line(
                     result["total_tokens"],
@@ -199,7 +206,7 @@ def register_search_tools(mcp: FastMCP) -> None:
                     lines.append("")
 
                 if result["truncated"]:
-                    lines.append("⚠️ Results truncated — use a narrower pattern or file_glob to see more.")
+                    lines.append("⚠ Results truncated — use a narrower pattern or file_glob to see more.")
 
                 return "\n".join(lines)
             except Exception as e:

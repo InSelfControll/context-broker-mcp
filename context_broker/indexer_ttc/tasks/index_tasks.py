@@ -3,6 +3,7 @@ Index building and lifecycle tasks.
 """
 
 import os
+from collections.abc import Callable
 from typing import Any, Optional
 
 import numpy as np
@@ -27,26 +28,45 @@ from context_broker.project import load_ignore_patterns
 from context_broker.utils import count_tokens, log
 
 
-def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
+ProgressCallback = Callable[[str], None]
+"""Sync callback receiving human-readable stage messages during long operations."""
+
+
+def _emit(callback: Optional[ProgressCallback], message: str) -> None:
+    """Deliver a stage message, never letting callback errors break indexing."""
+    if callback is None:
+        return
+    try:
+        callback(message)
+    except Exception as e:
+        log(f"⚠ Progress callback failed: {e}", "WARN")
+
+
+def get_index_for_project(
+    root_path: str,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Optional[dict[str, Any]]:
     """Get or create semantic index for project files."""
     root_path = os.path.abspath(root_path)
     if root_path in state.INDEXES:
         return state.INDEXES[root_path]
 
     log(f"⚡ Indexing new project: {root_path}")
+    _emit(progress_callback, f"🧠 Loading embedding model: {EMBEDDING_MODEL}")
     model = get_model()
     encoder = get_encoder()
     ignore_patterns = load_ignore_patterns(root_path)
     # Same per-file byte budget as search snippets so corpus token totals match the "full slice" baseline.
     read_cap = max(INDEX_FILE_MAX_CHARS, RESULT_FILE_MAX_CHARS)
 
+    _emit(progress_callback, "📂 Collecting project files...")
     file_paths = collect_project_files(
         root_path,
         ignore_dirs=DEFAULT_IGNORE_DIRS,
         ignore_patterns=ignore_patterns,
     )
     if not file_paths:
-        log("⚠️ No files found to index", "WARN")
+        log("⚠ No files found to index", "WARN")
         return None
 
     cached = load_index_cache(
@@ -70,8 +90,13 @@ def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
             f"✅ Index ready (disk cache). Total size: "
             f"{cached['total_tokens']:,} tokens across {len(cached['paths'])} files."
         )
+        _emit(
+            progress_callback,
+            f"⚡ Index loaded from disk cache ({len(cached['paths'])} files)",
+        )
         return index_data
 
+    _emit(progress_callback, f"📖 Reading {len(file_paths)} files...")
     documents: list[str] = []
     paths: list[str] = []
     total_project_tokens = 0
@@ -85,10 +110,11 @@ def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
         paths.append(file_path)
 
     if not documents:
-        log("⚠️ No files found to index", "WARN")
+        log("⚠ No files found to index", "WARN")
         return None
 
     log(f"🧠 Embedding {len(documents)} files...")
+    _emit(progress_callback, f"🧠 Embedding {len(documents)} files...")
     embeddings = np.asarray(
         model.encode(documents, batch_size=BATCH_SIZE, show_progress_bar=False)
     )
@@ -124,6 +150,6 @@ def clear_index(project_root: str) -> bool:
     disk_cleared = clear_index_cache(root_path)
     if root_path in state.INDEXES:
         del state.INDEXES[root_path]
-        log(f"🗑️ Cleared index for: {root_path}")
+        log(f"🗑 Cleared index for: {root_path}")
         return True
     return disk_cleared

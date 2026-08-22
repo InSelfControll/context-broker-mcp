@@ -190,8 +190,8 @@ def register_storage_tools(mcp: FastMCP) -> None:
     async def get_storage_config(ctx: Context = None) -> str:
         """Get current storage configuration."""
         with tracked_activity():
-            log("⚙️ get_storage_config called")
-            await progress(ctx, "⚙️ Retrieving storage configuration...")
+            log("⚙ get_storage_config called")
+            await progress(ctx, "⚙ Retrieving storage configuration...")
             config = get_storage_config_info()
             lines = [
                 "📦 Context Broker Storage Configuration",

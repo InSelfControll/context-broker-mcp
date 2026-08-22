@@ -20,18 +20,15 @@ Transport selection via CONTEXT_BROKER_TRANSPORT env var:
     ws               - WebSocket transport
 """
 
-import os
 import sys
 
 # Load .env BEFORE importing context_broker.config (which reads env at import time).
-from context_broker.env_loader import load_env
+from context_broker.env_loader import auto_load_env_enabled, load_env
+from context_broker.dashboard_ttc.tools.instance_guard import (
+    dashboard_already_running as _dashboard_already_running,
+)
 
-if os.getenv("CONTEXT_BROKER_AUTO_LOAD_ENV", "1").strip().lower() not in {
-    "0",
-    "false",
-    "no",
-    "off",
-}:
+if auto_load_env_enabled():
     load_env()
 
 from context_broker.config import (  # noqa: E402
@@ -41,28 +38,6 @@ from context_broker.config import (  # noqa: E402
     PORT,
     TRANSPORT,
 )
-
-
-def _dashboard_already_running(host: str, port: int) -> bool:
-    """Return True if a Context Broker dashboard is already serving on host:port."""
-    import json
-    import urllib.error
-    import urllib.request
-
-    probe_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
-    url = f"http://{probe_host}:{port}/api/status"
-    try:
-        with urllib.request.urlopen(url, timeout=1.0) as resp:
-            if resp.status != 200:
-                return False
-            body = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.URLError:
-        return False
-    except Exception:
-        return False
-    # Our /api/status always includes a "backend" field. Anything else on the
-    # port is not us — let uvicorn fail loudly instead of silently no-op'ing.
-    return isinstance(body, dict) and "backend" in body
 
 
 def _run_dashboard() -> None:
@@ -78,7 +53,9 @@ def _run_dashboard() -> None:
     import uvicorn
 
     from context_broker.dashboard import create_app
+    from context_broker.server_ttc.tools.auth_tools import assert_bind_allowed
 
+    assert_bind_allowed(DASHBOARD_HOST, DASHBOARD_PORT, "Dashboard")
     app = create_app()
     print(
         f"Starting Context Broker dashboard on http://{DASHBOARD_HOST}:{DASHBOARD_PORT}",
@@ -89,8 +66,16 @@ def _run_dashboard() -> None:
 
 def _run_mcp_server() -> None:
     """Run the MCP server using the selected transport."""
+    from context_broker.doctor_ttc import startup_warnings
     from context_broker.lifecycle import start_lifecycle_watchdogs
     from context_broker.server import get_default_server
+    from context_broker.server_ttc.tools.auth_tools import assert_bind_allowed
+
+    for warning in startup_warnings():
+        print(warning, file=sys.stderr)
+
+    if TRANSPORT in ("sse", "streamable-http", "ws"):
+        assert_bind_allowed(HOST, PORT, f"MCP {TRANSPORT} transport")
 
     start_lifecycle_watchdogs()
     mcp = get_default_server()

@@ -15,6 +15,7 @@ from context_broker.client_ttc.codebase.api import (
     DownstreamTransport,
     filtered_stdio_env,
 )
+from context_broker.client_ttc.tools import environment_tools
 
 
 class FakeSession:
@@ -90,6 +91,25 @@ def test_filtered_stdio_env_does_not_inherit_secret_parent_env(monkeypatch: Any)
     assert env["XDG_CACHE_HOME"] == "/tmp/cache"
     assert env["EXPLICIT_TOKEN"] == "allowed"
     assert "API_KEY" not in env
+
+
+def test_filtered_stdio_env_does_not_bulk_enumerate_parent_env(monkeypatch: Any) -> None:
+    class NoBulkEnvironment(dict[str, str]):
+        def items(self) -> Any:
+            raise AssertionError("parent environment must not be bulk-enumerated")
+
+    parent_env = NoBulkEnvironment(
+        {
+            "PATH": "/bin",
+            "XDG_CACHE_HOME": "/tmp/cache",
+            "API_KEY": "do-not-read",
+        }
+    )
+    monkeypatch.setattr(environment_tools.os, "environ", parent_env)
+
+    env = filtered_stdio_env()
+
+    assert env == {"PATH": "/bin", "XDG_CACHE_HOME": "/tmp/cache"}
 
 
 def test_connection_manager_discovers_capabilities_and_calls_tools() -> None:
