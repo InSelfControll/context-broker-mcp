@@ -26,7 +26,7 @@ Terminal (installed with the context-broker package):
   context-broker connect --project-root "/absolute/path/to/project"
   context-broker integration-config --host codex --project-root "/absolute/path/to/project"
   context-broker dashboard
-Use integration-config --help for supported hosts. Configuration is printed, not installed.
+Use integration-config --help for supported hosts. Configuration is merged into the agent config. Add --print for preview only.
 Relayhelm also exposes: relayhelm context-broker --help.
 With its Context Broker plugin enabled: /context-broker status or /context-broker index.
 The index command asks you to choose Index or No index; both modes read relevant history.
