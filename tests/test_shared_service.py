@@ -32,7 +32,10 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     env = dict(
-        os.environ, CONTEXT_BROKER_SHARED_RUNTIME_DIR=str(runtime), CONTEXT_BROKER_AUTO_LOAD_ENV="0"
+        os.environ,
+        CONTEXT_BROKER_SHARED_RUNTIME_DIR=str(runtime),
+        CONTEXT_BROKER_AUTO_LOAD_ENV="0",
+        CONTEXT_BROKER_LLM_BASE_URL="https://provider.invalid/v1",
     )
     log = (tmp_path / "server.log").open("w+")
     proc = subprocess.Popen(
@@ -67,7 +70,13 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
                 env=env,
                 keep_alive=False,
             )
-            async with Client(transport) as first:
+            choices = []
+
+            async def decline(message, response_type, params, context):
+                choices.append(message)
+                return {"value": "Keep one agent"}
+
+            async with Client(transport, elicitation_handler=decline) as first:
 
                 async def find(client):
                     return str(
@@ -79,6 +88,39 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
                     )
 
                 a, b = await asyncio.gather(find(first), find(second))
+                delegation = await asyncio.wait_for(
+                    first.call_tool(
+                        "delegate_large_task",
+                        {
+                            "task": "Review a large task",
+                            "model": "explicit-model",
+                            "subtasks": ["Review parser", "Review renderer"],
+                            "context": "Keep the public API stable",
+                            "acceptance_criteria": ["No API break"],
+                            "files": ["main.py"],
+                        },
+                    ),
+                    timeout=10,
+                )
+                assert choices, "Shared stdio connection did not forward the user question"
+                assert delegation.data["status"] == "single_agent"
+
+                failed = await first.call_tool_mcp(
+                    "delegate_large_task",
+                    {
+                        "task": "Review",
+                        "model": "",
+                        "subtasks": ["a", "b"],
+                        "context": "Keep API",
+                        "acceptance_criteria": ["No break"],
+                        "files": [],
+                    },
+                )
+                assert failed.isError
+                assert failed.structuredContent["status"] == "failed"
+                assert failed.structuredContent["completed"] is False
+                assert "exact model ID" in failed.structuredContent["failure_reason"]
+
                 for client in (first, second):
                     usage = await client.call_tool("get_memory_usage", {})
                     assert usage.data["pid"] == proc.pid

@@ -4,6 +4,7 @@ from fastmcp import Context, FastMCP
 
 from context_broker.delegation_ttc.tasks.delegation_tasks import DelegationRuntime
 from context_broker.lifecycle import tracked_activity
+from context_broker.server_ttc.tools.task_result import TaskResult
 
 
 def register_delegation_tools(mcp: FastMCP) -> None:
@@ -20,7 +21,7 @@ def register_delegation_tools(mcp: FastMCP) -> None:
         files: list[str],
         project_root: str = "",
         ctx: Context = None,
-    ) -> dict:
+    ) -> TaskResult:
         """Offer to split a large task into 2–4 independent agents, then review the results.
 
         Call only for a large task with a user-specified exact model. Include the original
@@ -31,7 +32,7 @@ def register_delegation_tools(mcp: FastMCP) -> None:
         dependent work or drop context to fit the input limit.
         """
         with tracked_activity():
-            return await runtime.run(
+            result = await runtime.run(
                 task=task,
                 model=model,
                 subtasks=subtasks,
@@ -41,3 +42,5 @@ def register_delegation_tools(mcp: FastMCP) -> None:
                 project_root=project_root,
                 ctx=ctx,
             )
+
+            return TaskResult(structured_content=result)
