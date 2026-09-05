@@ -450,6 +450,14 @@ ROUTER_PLAN_CACHE_MAX_ENTRIES: int = max(
 )
 """Maximum cached routing plans per process; zero disables plan caching."""
 
+MEMORY_POOL_BYTES = max(0, _get_env_int("CONTEXT_BROKER_MEMORY_POOL_MB", 256)) * 1024 * 1024
+"""Shared budget for cached project indexes, query results, and token reports."""
+QUERY_CACHE_MAX_ENTRIES = max(0, _get_env_int("CONTEXT_BROKER_QUERY_CACHE_MAX_ENTRIES", 128))
+QUERY_CACHE_MAX_FILE_BYTES = max(0, _get_env_int("CONTEXT_BROKER_QUERY_CACHE_MAX_FILE_BYTES", 4_000_000))
+SHARED_RUNTIME_DIR = os.environ.get(
+    "CONTEXT_BROKER_SHARED_RUNTIME_DIR", os.path.expanduser("~/.cache/context-broker/service")
+)
+
 
 # =============================================================================
 # MODEL CONFIGURATION

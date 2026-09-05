@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.changelog_ttc.codebase.api import (
@@ -41,7 +43,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
 
             root = Path(resolve_project_root(project_root))
             try:
-                result = ensure_changelog(str(root))
+                result = await run_blocking(ensure_changelog, str(root))
                 status = result["status"]
 
                 if status == "no_changes":
@@ -98,7 +100,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
 
             root = Path(resolve_project_root(project_root))
             try:
-                result = check_changelog_status(str(root))
+                result = await run_blocking(check_changelog_status, str(root))
                 status = result["status"]
                 valid = result.get("valid", False)
                 missing = result.get("missing_count", 0)
@@ -165,7 +167,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
 
             root = Path(resolve_project_root(project_root))
             try:
-                result = generate_changelog_for_version(str(root), version, since)
+                result = await run_blocking(generate_changelog_for_version, str(root), version, since)
                 status = result["status"]
                 commit_count = result.get("commit_count", "0")
 
@@ -209,7 +211,7 @@ def register_changelog_tools(mcp: FastMCP) -> None:
         with tracked_activity():
             root = Path(resolve_project_root(project_root))
             try:
-                result = get_changelog_stats(str(root))
+                result = await run_blocking(get_changelog_stats, str(root))
                 status = result["status"]
 
                 if status == "missing":

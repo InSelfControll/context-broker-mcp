@@ -35,6 +35,13 @@ def find_project_root(start_path: str | Path = "") -> Optional[str]:
 
 def resolve_project_root(project_root: str = "") -> str:
     """Resolve project root from explicit arg, env, auto-detect, then CWD."""
+    from context_broker.shared_ttc.tools.scope import PROJECT_ROOT
+
+    bound_root = PROJECT_ROOT.get()
+    if bound_root:
+        if project_root and str(Path(project_root).resolve()) != bound_root:
+            raise ValueError("project_root does not match this connection's project")
+        return bound_root
     if project_root:
         resolved = Path(project_root).resolve()
         log(f"📁 Using explicit project root: {resolved}")

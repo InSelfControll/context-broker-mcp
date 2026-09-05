@@ -10,7 +10,9 @@ import json
 import os
 from typing import Any
 
+from context_broker.config import QUERY_CACHE_MAX_ENTRIES, QUERY_CACHE_MAX_FILE_BYTES
 from context_broker.indexer_ttc.tools import state
+from context_broker.storage_ttc.tools.json_tools import atomic_write_json
 from context_broker.utils import get_cache_path, log
 
 
@@ -21,37 +23,47 @@ def generate_cache_key(query: str, top_k: int) -> str:
 
 
 def load_query_cache(project_root: str) -> dict[str, Any]:
-    """Load query cache from disk."""
-    if project_root in state.QUERY_CACHE:
-        return state.QUERY_CACHE[project_root]
-
+    """Load only a bounded, validated, project-specific cache."""
+    project_root = state.canonical_root(project_root)
+    cached = state.QUERY_CACHE.get(project_root)
+    if cached is not None:
+        return cached
     cache_path = get_cache_path(project_root)
-    if not cache_path.exists():
-        state.QUERY_CACHE[project_root] = {}
-        return {}
+    entries: dict[str, Any] = {}
     try:
-        with open(cache_path, "r") as f:
-            state.QUERY_CACHE[project_root] = json.load(f)
-            log(f"📦 Loaded cache with {len(state.QUERY_CACHE[project_root])} entries")
-            return state.QUERY_CACHE[project_root]
-    except Exception as e:
-        log(f"⚠️ Cache load failed: {e}", "WARN")
-        state.QUERY_CACHE[project_root] = {}
-        return {}
+        if (
+            QUERY_CACHE_MAX_ENTRIES > 0
+            and cache_path.exists()
+            and cache_path.stat().st_size <= QUERY_CACHE_MAX_FILE_BYTES
+        ):
+            payload = json.loads(cache_path.read_text())
+            if isinstance(payload, dict):
+                entries = {
+                    k: v
+                    for k, v in list(payload.items())[-QUERY_CACHE_MAX_ENTRIES:]
+                    if isinstance(v, dict)
+                }
+    except (OSError, ValueError) as exc:
+        log(f"⚠️ Query cache load failed: {exc}", "WARN")
+    state.QUERY_CACHE[project_root] = entries
+    return entries
 
 
 def save_query_cache(project_root: str) -> None:
-    """Persist query cache to local JSON."""
-    if project_root not in state.QUERY_CACHE:
+    """Persist bounded query metadata using atomic replacement."""
+    project_root = state.canonical_root(project_root)
+    entries = state.QUERY_CACHE.get(project_root)
+    if entries is None:
         return
-
-    cache_path = get_cache_path(project_root)
+    while len(entries) > QUERY_CACHE_MAX_ENTRIES:
+        entries.pop(next(iter(entries)))
+    state.QUERY_CACHE[project_root] = entries
+    if len(json.dumps(entries).encode()) > QUERY_CACHE_MAX_FILE_BYTES:
+        return
     try:
-        with open(cache_path, "w") as f:
-            json.dump(state.QUERY_CACHE[project_root], f, indent=2)
-        log(f"💾 Saved cache with {len(state.QUERY_CACHE[project_root])} entries")
-    except Exception as e:
-        log(f"⚠️ Cache save failed: {e}", "WARN")
+        atomic_write_json(get_cache_path(project_root), entries, pretty=False)
+    except OSError as exc:
+        log(f"⚠️ Query cache save failed: {exc}", "WARN")
 
 
 def get_file_mtimes(paths: list[str]) -> dict[str, float]:

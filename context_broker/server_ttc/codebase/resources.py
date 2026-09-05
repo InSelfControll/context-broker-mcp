@@ -2,6 +2,8 @@
 Resource and prompt registration for MCP server.
 """
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import FastMCP
 
 from context_broker.config import DEFAULT_QUERY
@@ -27,7 +29,7 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
             log("🔄 auto_context_resource called")
             root = resolve_project_root()
             try:
-                result = search_codebase(DEFAULT_QUERY, root, top_k=3)
+                result = await run_blocking(search_codebase, DEFAULT_QUERY, root, top_k=3)
                 lines = [
                     format_search_summary_line(
                         result["total_tokens"],
@@ -63,10 +65,10 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
         with tracked_activity():
             log("📊 token_counter_resource called")
             root = resolve_project_root()
-            report = get_last_token_report(root)
+            report = await run_blocking(get_last_token_report, root)
             if report is None:
                 try:
-                    result = search_codebase(DEFAULT_QUERY, root, top_k=1)
+                    result = await run_blocking(search_codebase, DEFAULT_QUERY, root, top_k=1)
                     report = report_from_result(result)
                 except Exception as e:
                     log(f"⚠️ token_counter_resource init error: {e}", "WARN")

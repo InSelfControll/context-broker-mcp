@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.agents_ttc.codebase.api import (
@@ -36,7 +38,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = ensure_agents_md(root)
+                result = await run_blocking(ensure_agents_md, root)
                 status = result["status"]
                 path = result["path"]
 
@@ -75,7 +77,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = validate_agents_md(root)
+                result = await run_blocking(validate_agents_md, root)
                 status = result["status"]
                 path = result["path"]
                 score = result.get("score", 0)
@@ -166,7 +168,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = generate_agents_md(root, force=force)
+                result = await run_blocking(generate_agents_md, root, force=force)
                 status = result["status"]
                 path = result["path"]
 
@@ -211,7 +213,7 @@ def register_agents_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                results = scan_for_missing_agents_md(root, max_depth=max_depth)
+                results = await run_blocking(scan_for_missing_agents_md, root, max_depth=max_depth)
                 missing = [r for r in results if not r["has_agents_md"]]
                 ok_count = len(results) - len(missing)
 

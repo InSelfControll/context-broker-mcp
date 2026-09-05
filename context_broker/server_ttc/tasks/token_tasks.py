@@ -5,6 +5,8 @@ Token-viewer related MCP tool handlers.
 import json
 from typing import Any
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.config import DEFAULT_QUERY, EMBEDDING_MODEL, ENCODING_MODEL, MODEL_DEVICE
@@ -86,11 +88,11 @@ def register_token_tools(mcp: FastMCP) -> None:
             log(f"📊 token_counter called: project_root='{root_display}'")
 
             root = resolve_project_root(project_root)
-            report = get_last_token_report(root)
+            report = await run_blocking(get_last_token_report, root)
             if report is None:
                 await progress(ctx, "📊 Initializing token counter with default context search...")
-                result = search_codebase(DEFAULT_QUERY, root, top_k=1)
-                report = get_last_token_report(root) or report_from_result(result)
+                result = await run_blocking(search_codebase, DEFAULT_QUERY, root, top_k=1)
+                report = await run_blocking(get_last_token_report, root) or report_from_result(result)
 
             await progress(
                 ctx,
@@ -113,7 +115,7 @@ def register_token_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root)
             project_name = get_project_name(root)
             safe_limit = min(max(limit, 1), 200)
-            runs = list_token_counter_runs(project_name, root, safe_limit)
+            runs = await run_blocking(list_token_counter_runs, project_name, root, safe_limit)
             reports = _reports_from_runs(runs)
             await progress(ctx, f"📉 Loaded {len(reports)} token history runs")
             return "\n".join(_format_token_history_graph(reports))

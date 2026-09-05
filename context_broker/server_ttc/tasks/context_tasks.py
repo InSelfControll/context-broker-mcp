@@ -5,6 +5,8 @@ Dispatches to either the Honcho or Redis context backend based on
 CONTEXT_BROKER_CONTEXT_BACKEND.
 """
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.config import (
@@ -146,7 +148,7 @@ def register_context_tools(mcp: FastMCP) -> None:
         """Show configured cross-chat context backend status."""
         with tracked_activity():
             await progress(ctx, "Checking cross-chat context backend status")
-            return dumps_context_payload(_status())
+            return dumps_context_payload(await run_blocking(_status))
 
     @mcp.tool()
     async def save_chat_context(
@@ -165,7 +167,7 @@ def register_context_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root) if project_root else ""
             await progress(ctx, f"Saving chat context for session: {session_id}")
             try:
-                payload = _save(
+                payload = await run_blocking(_save,
                     session_id=session_id,
                     project_root=root,
                     user_message=user_message,
@@ -221,7 +223,7 @@ def register_context_tools(mcp: FastMCP) -> None:
                     assistant_msg = str(turn.get("assistant", "") or "")
                     if not (user_msg or assistant_msg):
                         continue
-                    payload = _save(
+                    payload = await run_blocking(_save,
                         session_id=session_id,
                         project_root=root,
                         user_message=user_msg,
@@ -287,7 +289,7 @@ def register_context_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root) if project_root else ""
             await progress(ctx, f"Recording turn into session: {session_id}")
             try:
-                payload = _save(
+                payload = await run_blocking(_save,
                     session_id=session_id,
                     project_root=root,
                     user_message=user_message,
@@ -337,13 +339,13 @@ def register_context_tools(mcp: FastMCP) -> None:
             )
             try:
                 if peer_id:
-                    payload = redis_load_user_activity(digest, peer_id, limit=limit)
+                    payload = await run_blocking(redis_load_user_activity, digest, peer_id, limit=limit)
                     payload["project_root"] = root
                 else:
                     payload = {
                         "project_digest": digest,
                         "project_root": root,
-                        "users": redis_list_users(digest),
+                        "users": await run_blocking(redis_list_users, digest),
                     }
                 return dumps_context_payload(payload)
             except Exception as e:
@@ -378,7 +380,7 @@ def register_context_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root) if project_root else ""
             await progress(ctx, f"Cross-session search for: {search_query!r}")
             try:
-                payload = load_cross_session_matches(
+                payload = await run_blocking(load_cross_session_matches,
                     project_root=root,
                     search_query=search_query,
                     top_k=top_k,
@@ -410,7 +412,7 @@ def register_context_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root) if project_root else ""
             await progress(ctx, f"Loading chat context for session: {session_id}")
             try:
-                payload = _load(
+                payload = await run_blocking(_load,
                     session_id=session_id,
                     project_root=root,
                     tokens=tokens,
