@@ -8,7 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased] — 2026-09-05
 
+### Added
+
+- Add opt-in authenticated local `serve` / project-bound stdio `connect` commands so coding agents can share one model and memory pool across sessions.
+- Add aggregate shared-process cache diagnostics through `get_memory_usage`.
+
+### Changed
+
+- Bound retained index/query/report caches in one LRU pool; lazy-load ML imports and serialize model initialization and inference.
+- Stream index encoding in batches, memory-map cached vectors, compute cosine similarity in chunks, and invalidate indexes on corpus changes.
+- Move blocking search, storage, routing, and context operations into bounded workers with request-local project identity.
+- Separate global storage for equally named projects in shared mode; preserve existing standalone storage paths.
+
 ### Fixed
+
+- Evaluate ignored directories relative to the project, so projects located under `tmp` or `temp` remain searchable.
+- Lock disk index cache operations and keep the build fingerprint when publishing cached vectors.
 
 - Stop a busy Linux stdio broker when its client closes the MCP pipe, even if the editor stays open.
 - Keep downstream MCP sessions in a dedicated owner task so SDK cancellation scopes close correctly; reuse ready connections, clear stale discovery, validate retry limits, and enforce operation timeouts without replaying tool calls.

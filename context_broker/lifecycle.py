@@ -32,7 +32,7 @@ _ACTIVE_OPERATIONS = 0
 _WATCHDOGS_STARTED = False
 
 
-def start_lifecycle_watchdogs() -> None:
+def start_lifecycle_watchdogs(*, shared: bool = False) -> None:
     """Start background lifecycle watchdogs once per process."""
     global _WATCHDOGS_STARTED
 
@@ -43,10 +43,10 @@ def start_lifecycle_watchdogs() -> None:
         _mark_activity_locked()
         startup_chain = _get_startup_ancestor_chain()
 
-    if TRANSPORT == "stdio":
+    if not shared and TRANSPORT == "stdio":
         _start_stdio_disconnect_watchdog()
 
-    if EXIT_WHEN_PARENT_DIES and startup_chain:
+    if not shared and EXIT_WHEN_PARENT_DIES and startup_chain:
         _arm_parent_death_signal(startup_chain[0])
         threading.Thread(
             target=_monitor_parent_chain,

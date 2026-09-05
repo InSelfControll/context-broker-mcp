@@ -4,7 +4,6 @@ Token report persistence and retrieval helpers.
 
 import hashlib
 import json
-import os
 from typing import Any, Optional
 
 from context_broker.config import (
@@ -26,7 +25,7 @@ from context_broker.utils import log
 
 def get_last_token_report(project_root: str) -> Optional[dict[str, Any]]:
     """Get latest token usage report for a project."""
-    root_path = os.path.abspath(project_root)
+    root_path = state.canonical_root(project_root)
     in_memory = state.LAST_TOKEN_REPORTS.get(root_path)
     if in_memory is not None:
         return in_memory
@@ -58,7 +57,7 @@ def enrich_token_report(report: dict[str, Any]) -> dict[str, Any]:
 
 def persist_token_report(project_root: str, report: dict[str, Any]) -> None:
     """Persist latest token report and one immutable per-run history report."""
-    root_path = os.path.abspath(project_root)
+    root_path = state.canonical_root(project_root)
     enriched_report = enrich_token_report(report)
     report_hash = ""
     try:

@@ -20,6 +20,58 @@ Context Broker uses **one local ML model** — an embedding model, not a chat/LL
 - Explicit `HF_HUB_OFFLINE=1` or `TRANSFORMERS_OFFLINE=1` settings disable automatic downloads
 - The model is lazy-loaded and auto-unloaded after 15 minutes of inactivity
 
+### Share one broker across coding agents
+
+Start one local service, using the same installed environment as your agents:
+
+```sh
+CONTEXT_BROKER_AUTO_LOAD_ENV=0 context-broker serve
+```
+
+Configure each agent's stdio MCP entry to run:
+
+```sh
+context-broker connect --project-root /absolute/path/to/project
+```
+
+This works through the standard MCP stdio interface used by coding agents; each
+agent still uses its own MCP configuration format. It does not require provider
+API keys. Configure model/storage/backend settings on the service process. Start
+it once before connecting agents, and stop it explicitly when finished; `connect`
+does not auto-start a daemon. The service listens only on `127.0.0.1:8771` (change
+with `serve --port`). All clients must run as the same OS user. A private service
+descriptor in `~/.cache/context-broker/service` holds its random bearer token;
+`CONTEXT_BROKER_SHARED_RUNTIME_DIR` selects another private runtime directory.
+
+Each connection binds one canonical project root. Requests cannot override that
+root, and resources use the connection's project rather than the service's CWD.
+Chat/session identifiers remain scoped by project. In shared mode, global JSON
+storage names include a project-path digest so equally named folders cannot
+collide; existing in-project saves remain available. Legacy name-only global saves
+are not automatically migrated into shared mode.
+
+The service owns one lazy embedding model and a single LRU cache pool for project
+indexes, query metadata, and token reports. `CONTEXT_BROKER_MEMORY_POOL_MB` defaults
+to 256; this bounds estimated retained cache payloads, **not total RSS, the model,
+or in-flight work**. Oversized indexes can be used without retention. Queries keep
+at most `CONTEXT_BROKER_QUERY_CACHE_MAX_ENTRIES` entries per project (default 128),
+and disk query-cache loading/writing is limited by
+`CONTEXT_BROKER_QUERY_CACHE_MAX_FILE_BYTES` (default 4000000). Disk embedding caches
+use read-only memory maps; indexing encodes one batch at a time and search scores
+vectors in chunks. `get_memory_usage` reports aggregate pool counts and the shared
+PID without exposing another project's content.
+
+Disabling an agent's MCP connection ends its proxy; other sessions and the shared
+service continue. Agents still need to send their requests through MCP: installing
+an MCP server cannot intercept every provider prompt or change an editor's plugin
+enabled setting. Native host/plugin toggle hooks are not implemented here.
+
+Verification uses standard MCP clients and a real stdio subprocess. Native Codex,
+Claude Code, Cline, VS Code, DeepSeek, and Hermes applications were not launched in
+the test environment. A Linux startup-only measurement using the same interpreter
+showed 846224 KiB peak RSS for the old eager package import and 79044 KiB for proxy
+construction, before model loading; this is not a production workload benchmark.
+
 ### Disconnect behavior
 
 On Linux, closing the editor's stdio MCP connection terminates the broker even when

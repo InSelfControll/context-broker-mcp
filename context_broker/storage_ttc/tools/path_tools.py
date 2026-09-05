@@ -30,9 +30,22 @@ def get_storage_dirs(
     project_name: str, subdir: str = "", project_root: str = ""
 ) -> tuple[Optional[Path], Path]:
     """Get local and global storage directories for a project."""
+    from context_broker.shared_ttc.tools.scope import PROJECT_ROOT
+    from context_broker.project import resolve_project_root, get_project_name
+
+    if PROJECT_ROOT.get():
+        project_root = resolve_project_root(project_root)
+        if project_name != get_project_name(project_root):
+            raise ValueError("project_name does not match this connection's project")
     if not project_name or project_name in {".", ".."} or "/" in project_name:
         raise ValueError("project_name must be a non-empty directory name")
-    global_path = contained_path(Path(STORAGE_BASE_DIR), project_name, subdir)
+    global_name = project_name
+    if PROJECT_ROOT.get():
+        import hashlib
+
+        digest = hashlib.sha256(project_root.encode()).hexdigest()[:20]
+        global_name = f"{project_name}-{digest}"
+    global_path = contained_path(Path(STORAGE_BASE_DIR), global_name, subdir)
 
     local_path: Optional[Path] = None
     if project_root:
