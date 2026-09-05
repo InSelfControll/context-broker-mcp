@@ -5,6 +5,7 @@ import os
 from fastmcp import FastMCP
 
 from context_broker.server_ttc.codebase.resources import register_resources_and_prompts
+from context_broker.server_ttc.tasks.delegation_tasks import register_delegation_tools
 from context_broker.server_ttc.tasks.agents_tasks import register_agents_tools
 from context_broker.server_ttc.tasks.changelog_tasks import register_changelog_tools
 from context_broker.server_ttc.tasks.context_tasks import register_context_tools
@@ -20,6 +21,7 @@ _default_server: FastMCP | None = None
 def create_mcp_server() -> FastMCP:
     """Create and configure the MCP server."""
     mcp = FastMCP("Context Broker - Semantic Code Search")
+    register_delegation_tools(mcp)
     if os.environ.get("CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY", "0").lower() in {
         "1",
         "true",

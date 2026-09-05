@@ -86,4 +86,12 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
 
 Alternatively, use `auto_search` tool for initial project exploration (no arguments needed).
 
+For a large task with 2-4 independent assignments, offer `delegate_large_task`.
+Ask which exact model to use if the user has not specified one. Include the original
+request, conversation decisions, constraints, relevant files, and acceptance criteria.
+The delegation tool asks the user whether to split or keep one agent. Never interpret
+silence as consent. Do not split dependent work. If elicitation is unavailable or the
+user declines, continue with one agent. Integrate proposals and run verification before
+claiming completion; worker/reviewer prose is not proof that tests ran.
+
 This ensures you have relevant codebase context before responding. Never skip this step."""

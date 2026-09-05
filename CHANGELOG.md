@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add consent-gated `delegate_large_task`: 2–4 parallel model-pinned proposal workers, shared project context, and an acceptance-criteria integration review; no workers start if the user declines or elicitation is unavailable.
+- Bound delegation inputs, outputs, concurrency, and provider timeouts; reject model substitution, stale context, and incomplete handoffs without silently truncating context or applying unverified changes.
+
 - Add opt-in authenticated local `serve` / project-bound stdio `connect` commands so coding agents can share one model and memory pool across sessions.
 - Add aggregate shared-process cache diagnostics through `get_memory_usage`.
 

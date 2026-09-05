@@ -176,6 +176,13 @@ user configuration. They provide a safety net against accidental secret leakage.
 """
 
 SECRET_ENV_KEY_PATTERNS: set[str] = {
+    # Private-key headers also protect pasted context and renamed key files.
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "-----BEGIN EC PRIVATE KEY-----",
+    "-----BEGIN DSA PRIVATE KEY-----",
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
     "PRIVATE_KEY",
     "SECRET_KEY",
     "API_KEY",
