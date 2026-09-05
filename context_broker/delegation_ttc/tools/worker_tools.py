@@ -81,5 +81,11 @@ class CompletionWorker:
             return content
         except WorkerError:
             raise
-        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError):
-            raise WorkerError("Worker request failed or returned invalid JSON") from None
+        except httpx.HTTPStatusError as exc:
+            raise WorkerError(f"Provider returned HTTP {exc.response.status_code}") from None
+        except httpx.TimeoutException:
+            raise WorkerError("Provider connection/read timed out") from None
+        except httpx.HTTPError:
+            raise WorkerError("Provider connection failed") from None
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise WorkerError("Provider returned malformed completion JSON") from None

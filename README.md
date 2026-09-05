@@ -72,6 +72,40 @@ the test environment. A Linux startup-only measurement using the same interprete
 showed 846224 KiB peak RSS for the old eager package import and 79044 KiB for proxy
 construction, before model loading; this is not a production workload benchmark.
 
+### Codex, Hermes, Cursor, and Claude Code configuration
+
+Generate a configuration fragment using the installed broker interpreter:
+
+```sh
+context-broker integration-config --host codex --project-root /absolute/project
+context-broker integration-config --host hermes --project-root /absolute/project
+context-broker integration-config --host cursor --project-root /absolute/project
+context-broker integration-config --host claude-code --project-root /absolute/project
+```
+
+Merge the fragment into the corresponding host settings; do not overwrite existing
+entries. Start `context-broker serve` first. Each fragment launches a lightweight
+project-bound proxy using the absolute Python interpreter path. The optional
+`--runtime-dir` must match the service's `CONTEXT_BROKER_SHARED_RUNTIME_DIR`.
+
+| Host | Configuration | Delegation settings |
+| --- | --- | --- |
+| [Codex](https://developers.openai.com/codex/mcp/) | `.codex/config.toml`, `mcp_servers` | 600-second tool timeout; allow interactive MCP elicitation in host approvals |
+| [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | `~/.hermes/config.yaml`, `mcp_servers` | JSON fragment is valid YAML; 600-second tool timeout, form elicitation enabled |
+| [Cursor](https://cursor.com/docs/mcp) | `.cursor/mcp.json`, `mcpServers` | Uses the host's interactive elicitation and timeout behavior |
+| [Claude Code](https://code.claude.com/docs/en/mcp) | `.mcp.json`, `mcpServers` | 600000-millisecond per-server timeout on versions supporting that setting |
+
+Keep elicitation interactive: host hooks that automatically approve prompts defeat
+the intended human choice. If elicitation is unavailable, no workers launch. Shared
+HTTP uses stateful sessions to forward the question through the stdio proxy. One
+service still owns the model/cache pool; session protocol state remains separate.
+
+Tests cover configuration parsing, real stdio/HTTP consent forwarding, failure
+propagation, shared-process identity, and project isolation. Native applications for
+these four hosts are not installed in the test environment, so native end-to-end
+compatibility is **unverified**, not a 100% compatibility claim. Host versions,
+approval policies, output limits, and plugin controls still require native checks.
+
 ### Optional multi-agent delegation for large tasks
 
 `delegate_large_task` runs 2–4 independent proposal workers concurrently, then one
@@ -103,10 +137,17 @@ Workers have no command execution or file-writing tools. They return proposed ch
 evidence, and risks. The reviewer must cover every acceptance criterion and report
 conflicts, missing context, and a verification plan. Passing that review yields
 `ready_for_integration`, **not completed work**: the host must integrate proposals
-and run tests. Failed batches preserve completed handoffs, cancel unfinished siblings,
+and run tests. Failed batches preserve successful proposal handoffs, cancel unfinished siblings,
 and never automatically retry paid calls. One batch at a time per server bounds
 concurrency and avoids an unbounded task queue. Model review cannot guarantee quality;
 actual code verification remains required.
+
+Failures return `status: "failed"`, `failure_code`, `failure_reason`, and
+`completed: false`, with the MCP `isError` flag set. This includes invalid input,
+provider errors, declared worker failures, changed context, confirmation timeouts,
+and rejected or incomplete reviews. A worker cannot label a failed assignment as a
+successful proposal. Provider HTTP failures expose the status code, not response
+bodies or credentials. Validation failures omit rejected input values.
 
 ### Disconnect behavior
 

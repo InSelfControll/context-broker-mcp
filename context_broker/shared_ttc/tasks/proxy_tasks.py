@@ -1,10 +1,40 @@
 """Lightweight stdio proxy: no embedding model is imported in agent processes."""
 
+import json
+
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
+
+from context_broker.server_ttc.tools.task_result import TaskResult
+
 from pathlib import Path
 from urllib.parse import quote
 
 from context_broker.shared_ttc.tools.runtime_tools import read_service
 from context_broker.shared_ttc.tools.scope import PROJECT_HEADER
+
+
+class PreserveTaskFailures(Middleware):
+    """Restore structured delegation errors flattened by FastMCP's ProxyTool."""
+
+    async def on_call_tool(self, context, call_next):
+        try:
+            return await call_next(context)
+        except ToolError as exc:
+            if context.message.name != "delegate_large_task":
+                raise
+            try:
+                record = json.loads(str(exc))
+            except (ValueError, TypeError):
+                raise exc
+            if (
+                not isinstance(record, dict)
+                or record.get("status") != "failed"
+                or record.get("completed") is not False
+                or not isinstance(record.get("failure_reason"), str)
+            ):
+                raise exc
+            return TaskResult(structured_content=record)
 
 
 def create_agent_proxy(project_root: str, service: dict[str, str] | None = None):
@@ -26,7 +56,9 @@ def create_agent_proxy(project_root: str, service: dict[str, str] | None = None)
         headers={PROJECT_HEADER: quote(str(root), safe="")},
         httpx_client_factory=partial(httpx.AsyncClient, trust_env=False),
     )
-    return create_proxy(ProxyClient(transport), name="Context Broker Shared Connection")
+    proxy = create_proxy(ProxyClient(transport), name="Context Broker Shared Connection")
+    proxy.add_middleware(PreserveTaskFailures())
+    return proxy
 
 
 def run_agent_proxy(project_root: str) -> None:

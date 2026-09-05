@@ -113,6 +113,17 @@ def _run_mcp_server() -> None:
 
 def main() -> None:
     """Run the Context Broker MCP server or web dashboard."""
+    if len(sys.argv) > 1 and sys.argv[1] == "integration-config":
+        import argparse
+        from context_broker.integrations_ttc.tools.config_tools import HOSTS, client_config
+
+        parser = argparse.ArgumentParser(prog="context-broker integration-config")
+        parser.add_argument("--host", required=True, choices=HOSTS)
+        parser.add_argument("--project-root", required=True)
+        parser.add_argument("--runtime-dir", default="")
+        args = parser.parse_args(sys.argv[2:])
+        sys.stdout.write(client_config(args.host, args.project_root, runtime_dir=args.runtime_dir))
+        return
     if len(sys.argv) > 1 and sys.argv[1] in {"serve", "connect"}:
         import argparse
 

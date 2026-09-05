@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Generate project-bound MCP configuration fragments for Codex, Hermes, Cursor, and Claude Code with native configuration keys and timeout units.
+
 - Add consent-gated `delegate_large_task`: 2–4 parallel model-pinned proposal workers, shared project context, and an acceptance-criteria integration review; no workers start if the user declines or elicitation is unavailable.
 - Bound delegation inputs, outputs, concurrency, and provider timeouts; reject model substitution, stale context, and incomplete handoffs without silently truncating context or applying unverified changes.
 
@@ -24,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Separate global storage for equally named projects in shared mode; preserve existing standalone storage paths.
 
 ### Fixed
+
+- Return explicit failed task records with reasons and MCP error flags; reject agent-declared failures and failed integration reviews while retaining successful handoffs.
+- Use stateful shared MCP sessions so interactive task-splitting consent reaches stdio clients instead of timing out.
 
 - Evaluate ignored directories relative to the project, so projects located under `tmp` or `temp` remain searchable.
 - Lock disk index cache operations and keep the build fingerprint when publishing cached vectors.

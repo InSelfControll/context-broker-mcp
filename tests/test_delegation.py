@@ -51,6 +51,7 @@ class Worker:
                     synthesis="Integrate the two proposals and validate.",
                 )
             return dict(
+                status="proposed",
                 summary="proposal",
                 proposed_changes=["proposed patch"],
                 evidence=["source inspection"],
@@ -122,7 +123,8 @@ async def test_snapshot_change_while_asking_requires_new_proposal(tmp_path):
 
     worker = Worker()
     result = await DelegationRuntime(worker).run(**request(tmp_path, ChangingConsent()))
-    assert result["status"] == "stale_context"
+    assert result["status"] == "failed"
+    assert result["failure_code"] == "stale_context"
     assert not worker.calls
 
 
@@ -131,7 +133,8 @@ async def test_bad_review_never_counts_as_complete(tmp_path):
     worker = Worker()
     worker.approved = False
     result = await DelegationRuntime(worker).run(**request(tmp_path))
-    assert result["status"] == "needs_revision"
+    assert result["status"] == "failed"
+    assert result["failure_code"] == "review_failed"
 
 
 @pytest.mark.anyio
@@ -163,12 +166,9 @@ async def test_invalid_context_never_launches(tmp_path, bad_files):
     worker = Worker()
     args = request(tmp_path)
     args["files"] = bad_files
-    if len(bad_files) > 30:
-        with pytest.raises(ValueError, match="at most 30"):
-            await DelegationRuntime(worker).run(**args)
-    else:
-        result = await DelegationRuntime(worker).run(**args)
-        assert result["status"] == "failed"
+    result = await DelegationRuntime(worker).run(**args)
+    assert result["status"] == "failed"
+    assert result["failure_reason"]
     assert not worker.calls and not args["ctx"].questions
 
 
@@ -290,7 +290,8 @@ async def test_reviewer_cannot_approve_incomplete_handoff(tmp_path, kind):
             return result
 
     result = await DelegationRuntime(IncompleteReviewer()).run(**request(tmp_path))
-    assert result["status"] == "needs_revision"
+    assert result["status"] == "failed"
+    assert result["failure_code"] == "review_failed"
 
 
 @pytest.mark.anyio
@@ -298,8 +299,9 @@ async def test_oversize_context_is_rejected_not_truncated(tmp_path):
     worker = Worker()
     args = request(tmp_path)
     args["context"] = "X" * 65000
-    with pytest.raises(ValueError, match="nothing was truncated"):
-        await DelegationRuntime(worker).run(**args)
+    result = await DelegationRuntime(worker).run(**args)
+    assert result["status"] == "failed"
+    assert "nothing was truncated" in result["failure_reason"]
     assert not args["ctx"].questions and not worker.calls
 
 
@@ -379,3 +381,35 @@ def test_snapshot_rejects_undecodable_context(tmp_path):
     (tmp_path / "broken.py").write_bytes(b"content\xff")
     with pytest.raises(ValueError, match="unreadable"):
         snapshot(str(tmp_path), ["broken.py"])
+
+
+@pytest.mark.anyio
+async def test_agent_declared_failure_cannot_pass_review(tmp_path):
+    class FailedWorker(Worker):
+        async def complete(self, model, prompt):
+            result = await super().complete(model, prompt)
+            result.update(status="failed", failure_reason="Required parser source is missing")
+            return result
+
+    worker = FailedWorker()
+    result = await DelegationRuntime(worker).run(**request(tmp_path))
+    assert result["status"] == "failed"
+    assert result["completed"] is False
+    assert result["failure_reason"] == "Required parser source is missing"
+    assert result["failed_agents"]
+    assert not any(prompt.startswith("Review") for _, prompt in worker.calls)
+
+
+@pytest.mark.anyio
+async def test_mcp_failure_preserves_error_flag_and_reason(tmp_path):
+    from context_broker.server import create_mcp_server
+
+    args = request(tmp_path)
+    args.pop("ctx")
+    args["model"] = ""
+    async with Client(create_mcp_server()) as client:
+        result = await client.call_tool_mcp("delegate_large_task", args)
+    assert result.isError
+    assert result.structuredContent["status"] == "failed"
+    assert result.structuredContent["completed"] is False
+    assert "exact model ID" in result.structuredContent["failure_reason"]
