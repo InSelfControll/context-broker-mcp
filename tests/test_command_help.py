@@ -8,7 +8,7 @@ from context_broker import __main__ as cli
 
 
 @pytest.mark.parametrize('args,code', [(['--help'], 0), (['serve', '--help'], 0),
-    (['dashboard', '--typo'], 2), (['typo'], 2), (['serve', '--port', '0'], 2)])
+    (['dashboard', '--typo'], 2), (['typo'], 2), (['serve', '--port', '-1'], 2)])
 def test_help_and_errors_do_not_start_services(monkeypatch, args, code):
     server = Mock(side_effect=AssertionError('server started'))
     monkeypatch.setattr(cli, '_run_mcp_server', server)

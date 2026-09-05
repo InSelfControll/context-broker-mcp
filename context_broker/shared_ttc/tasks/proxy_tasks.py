@@ -70,6 +70,10 @@ def create_agent_proxy(project_root: str, service: dict[str, str] | None = None)
 def run_agent_proxy(project_root: str) -> None:
     """End only this connection when its coding agent closes stdio."""
     from context_broker.lifecycle import _start_stdio_disconnect_watchdog
+    from context_broker.shared_ttc.tasks.startup_tasks import ensure_service
 
+    root = Path(project_root).resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("project_root must be a directory")
     _start_stdio_disconnect_watchdog()
-    create_agent_proxy(project_root).run(transport="stdio", show_banner=False)
+    create_agent_proxy(str(root), ensure_service()).run(transport="stdio", show_banner=False)

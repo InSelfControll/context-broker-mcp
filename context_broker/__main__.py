@@ -125,6 +125,10 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command")
     commands.add_parser("mcp", help="Start the MCP server using the configured transport")
     commands.add_parser("dashboard", help="Open the web dashboard service")
+    commands.add_parser("start", help="Start or reuse the shared service in the background")
+    commands.add_parser("stop", help="Stop the shared service (disconnects all agents)")
+    update = commands.add_parser("update", help="Update the runtime and restart its shared service")
+    update.add_argument("--check", action="store_true", help="Show the update plan without changes")
     serve = commands.add_parser("serve", help="Run one shared model and memory pool")
     serve.add_argument("--port", type=int, default=8771)
     connect = commands.add_parser("connect", help="Connect an agent to a project's shared service")
@@ -152,10 +156,29 @@ def main() -> None:
             sys.stdout.write(f"{result['status']}: {result['config_path']}\n")
             if result.get("backup_path"):
                 sys.stdout.write(f"Backup: {result['backup_path']}\n")
-            sys.stdout.write("Start context-broker serve if needed, then restart your agent.\n")
+            sys.stdout.write("Restart your agent; its MCP connection starts the shared broker automatically.\n")
+    elif args.command in {"start", "stop", "update"}:
+        from context_broker.shared_ttc.tasks.startup_tasks import (
+            ensure_service, running_service, stop_service,
+        )
+        from context_broker.integrations_ttc.tools.update_tools import update_runtime
+
+        def stop() -> None:
+            service = running_service()
+            if service:
+                stop_service(service)
+
+        try:
+            {"start": ensure_service, "stop": stop,
+             "update": lambda: update_runtime(check_only=args.check)}[args.command]()
+        except (RuntimeError, ValueError) as exc:
+            parser.exit(1, f"Context Broker {args.command} failed: {exc}\n")
+        except Exception as exc:
+            parser.exit(1, f"Context Broker {args.command} failed ({type(exc).__name__}). "
+                        "Check installation ownership, local changes, and service state.\n")
     elif args.command == "serve":
-        if not 0 < args.port < 65536:
-            serve.error("port must be between 1 and 65535")
+        if not 0 <= args.port < 65536:
+            serve.error("port must be between 0 and 65535 (0 selects a free local port)")
         from context_broker.shared_ttc.tasks.service_tasks import run_shared_server
 
         run_shared_server(args.port)
