@@ -22,7 +22,11 @@ _default_server: FastMCP | None = None
 
 def create_mcp_server() -> FastMCP:
     """Create and configure the MCP server."""
-    mcp = FastMCP("Context Broker - Semantic Code Search")
+    mcp = FastMCP(
+        "Context Broker - Semantic Code Search",
+        instructions="For user-facing command help, open context-broker://commands or "
+        "select the context-broker prompt. Terminal help: context-broker --help.",
+    )
     register_delegation_tools(mcp)
     register_handoff_tools(mcp)
     register_history_tools(mcp)
