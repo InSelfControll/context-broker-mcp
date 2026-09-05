@@ -101,10 +101,48 @@ HTTP uses stateful sessions to forward the question through the stdio proxy. One
 service still owns the model/cache pool; session protocol state remains separate.
 
 Tests cover configuration parsing, real stdio/HTTP consent forwarding, failure
-propagation, shared-process identity, and project isolation. Native applications for
-these four hosts are not installed in the test environment, so native end-to-end
-compatibility is **unverified**, not a 100% compatibility claim. Host versions,
+propagation, shared-process identity, and project isolation. The user reports successful laptop use with Codex, Hermes, and Claude Code.
+Those applications are not installed in this test environment, so that report is
+separate from automated verification of this branch. Cursor native compatibility
+remains unverified. Host versions,
 approval policies, output limits, and plugin controls still require native checks.
+
+### Share memory when switching models
+
+`save_model_handoff` saves an immutable checkpoint; `load_model_handoff` restores
+it for any target model in the same project. Neither requires Redis, Honcho, or a
+provider API. Supply the source model, session ID, relevant files, and this state:
+
+```json
+{
+  "goal": "Original user request",
+  "messages": [{"role": "user", "content": "Exact conversation text"}],
+  "decisions": ["Keep the existing public API"],
+  "constraints": ["Use the user-selected model and reasoning level"],
+  "facts": [],
+  "tasks": [{"task": "Native verification", "status": "failed", "failure_reason": "Host unavailable"}],
+  "acceptance_criteria": ["Regression tests pass"],
+  "open_questions": []
+}
+```
+
+Pass the returned `handoff_id` to the next model. It must load that checkpoint
+before continuing. Exact supplied messages, decisions, failures, and file contents
+are retained; no automatic summary replaces them. Failed tasks require reasons;
+completed tasks require evidence. Evidence is caller-supplied and still needs review.
+Changed files, corruption, missing checkpoints, or insufficient context budget return
+`failed`. Saved memory stays intact for recovery. These tools cannot recover unsaved
+host history, transfer private model reasoning, or guarantee equal model quality.
+
+Checkpoints live once under `CONTEXT_BROKER_STORAGE_DIR/handoffs/<project-digest>/`,
+independently of model, session, and the generic storage mode. Identical saves reuse
+the same content-hash ID; updated checkpoints preserve previous versions. No model-
+specific in-memory cache is added. Atomic writes and file locks protect concurrent
+saves. Storage is durable and grows with distinct checkpoints; old memory is never
+automatically evicted. Each checkpoint is limited to 256 KB, with selected source
+files sharing the existing 64 KB snapshot limit. Load defaults to a 32 KB byte budget;
+choose a budget fitting the target host/model and resolve a failed load before work
+continues. No provider call or model switch happens automatically.
 
 ### Optional multi-agent delegation for large tasks
 

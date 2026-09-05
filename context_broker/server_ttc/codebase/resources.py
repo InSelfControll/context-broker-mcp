@@ -94,4 +94,10 @@ silence as consent. Do not split dependent work. If elicitation is unavailable o
 user declines, continue with one agent. Integrate proposals and run verification before
 claiming completion; worker/reviewer prose is not proof that tests ran.
 
+Before switching models, call save_model_handoff with exact messages, the original goal,
+all decisions, constraints, facts, task outcomes and evidence, open questions, and criteria.
+Pass its handoff_id to the next model and call load_model_handoff before continuing.
+Never treat a failed load, missing memory, or a failed task as completed. Preserve the
+user's model and reasoning preferences. Do not invent unsaved conversation history.
+
 This ensures you have relevant codebase context before responding. Never skip this step."""
