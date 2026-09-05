@@ -27,12 +27,12 @@ File schema::
   }
 """
 
-import hashlib
 import json
-import os
 import time
 from pathlib import Path
 from typing import Any
+
+from filelock import FileLock
 
 from context_broker.config import (
     IN_PROJECT_FOLDER,
@@ -41,18 +41,11 @@ from context_broker.config import (
     StorageMode,
 )
 from context_broker.project import get_project_name
-
-
-def _digest(project_root: str) -> str:
-    """Stable digest used to scope chat files per project root."""
-    root = os.path.abspath(project_root or os.getcwd())
-    return hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
-
-
-def _safe_session(session_id: str) -> str:
-    candidate = (session_id or "default").strip() or "default"
-    return "".join(c if c.isalnum() or c in {"-", "_", "."} else "-" for c in candidate)
-
+from context_broker.context_ttc.tools.identity_tools import (
+    normalize_identifier as _safe_session,
+    project_digest as _digest,
+)
+from context_broker.storage_ttc.tools.json_tools import atomic_write_json
 
 def ledger_paths(project_root: str, session_id: str) -> list[Path]:
     """Return every ledger path that should receive the append, per STORAGE_MODE."""
@@ -77,17 +70,15 @@ def _read(path: Path) -> dict[str, Any]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
-            return payload if isinstance(payload, dict) else {}
-    except Exception:
-        return {}
+            if not isinstance(payload, dict) or not isinstance(payload.get("messages", []), list):
+                raise ValueError(f"invalid chat ledger schema: {path}")
+            return payload
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid chat ledger JSON: {path}") from exc
 
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    atomic_write_json(path, payload)
 
 
 def append_turn(
@@ -113,15 +104,15 @@ def append_turn(
 
     written: list[str] = []
     for path in ledger_paths(project_root, session_id):
-        existing = _read(path)
-        existing.setdefault("project", project_meta)
-        existing.setdefault("session_id", safe_session)
-        existing.setdefault("messages", [])
-        if not isinstance(existing["messages"], list):
-            existing["messages"] = []
-        existing["messages"].extend(messages)
-        existing["updated_at"] = time.time()
-        _atomic_write(path, existing)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with FileLock(str(path) + ".lock", timeout=30):
+            existing = _read(path)
+            existing.setdefault("project", project_meta)
+            existing.setdefault("session_id", safe_session)
+            existing.setdefault("messages", [])
+            existing["messages"].extend(messages)
+            existing["updated_at"] = time.time()
+            _atomic_write(path, existing)
         written.append(str(path))
     return written
 

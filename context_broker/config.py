@@ -445,6 +445,11 @@ IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS: float = max(
 )
 """How often to check whether idle resources should be released."""
 
+ROUTER_PLAN_CACHE_MAX_ENTRIES: int = max(
+    0, _get_env_int("CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES", 128)
+)
+"""Maximum cached routing plans per process; zero disables plan caching."""
+
 
 # =============================================================================
 # MODEL CONFIGURATION

@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from copy import deepcopy
+from threading import Lock
 from time import perf_counter
 from typing import Any, Callable
 
+from context_broker.config import ROUTER_PLAN_CACHE_MAX_ENTRIES
 from context_broker.indexer import literal_search, search_codebase
 from context_broker.project import resolve_project_root
 from context_broker.router_ttc.tasks.planner_tasks import build_plan
 from context_broker.router_ttc.tools.default_tools import default_tool_descriptors
 from context_broker.router_ttc.tools.observability_tools import benchmark_summary, get_router_metrics
-from context_broker.router_ttc.tools.registry_tools import ToolDescriptor, ToolRegistry
+from context_broker.router_ttc.tools.registry_tools import RankedTool, ToolDescriptor, ToolRegistry
 from context_broker.router_ttc.tools.safety_tools import (
     SafetyDecision,
     assess_tool_execution,
@@ -19,7 +23,8 @@ from context_broker.router_ttc.tools.safety_tools import (
 from context_broker.router_ttc.tools.token_tools import descriptor_token_count, token_report_for_selection
 
 RouterMode = str
-_PLAN_CACHE: dict[tuple[str, str, int, int, str], dict[str, Any]] = {}
+_PLAN_CACHE: OrderedDict[tuple[str, str, int, int, str], dict[str, Any]] = OrderedDict()
+_PLAN_CACHE_LOCK = Lock()
 
 
 def get_default_registry() -> ToolRegistry:
@@ -100,6 +105,8 @@ def _select_tools(
     top_k: int,
     token_budget: int,
 ) -> list[ToolDescriptor]:
+    if top_k <= 0 or token_budget <= 0:
+        return []
     ranked = registry.rank(task, top_k=top_k)
     relevant = [item for item in ranked if item.score >= 0.08]
     if not relevant and ranked:
@@ -115,17 +122,19 @@ def _select_tools(
             relevant = [
                 item for item in relevant if item.descriptor.id != "find_in_codebase"
             ]
-            relevant.insert(0, type(ranked[0])(descriptor=literal_desc, score=1.0))
+            relevant.insert(0, RankedTool(descriptor=literal_desc, score=1.0))
 
     selected: list[ToolDescriptor] = []
     used_tokens = 0
     for item in relevant:
         descriptor = item.descriptor
         descriptor_tokens = descriptor_token_count(descriptor)
-        if selected and used_tokens + descriptor_tokens > token_budget:
+        if used_tokens + descriptor_tokens > token_budget:
             continue
         selected.append(descriptor)
         used_tokens += descriptor_tokens
+        if len(selected) >= top_k:
+            break
     return selected
 
 
@@ -146,18 +155,22 @@ def route_task(
     """
     if mode not in {"plan_only", "recommend_tools", "execute_safe"}:
         raise ValueError("mode must be one of: plan_only, recommend_tools, execute_safe")
+    if token_budget < 0 or top_k < 0:
+        raise ValueError("token_budget and top_k must be non-negative")
     started = perf_counter()
     metrics = get_router_metrics()
     metrics.route_count += 1
     active_registry = registry or get_default_registry()
     cache_key = (task, mode, token_budget, top_k, active_registry.fingerprint())
-    if cache_key in _PLAN_CACHE:
-        metrics.cache_hits += 1
-        cached = dict(_PLAN_CACHE[cache_key])
-        cached["cached"] = True
-        return cached
+    with _PLAN_CACHE_LOCK:
+        if ROUTER_PLAN_CACHE_MAX_ENTRIES > 0 and cache_key in _PLAN_CACHE:
+            metrics.cache_hits += 1
+            _PLAN_CACHE.move_to_end(cache_key)
+            cached = deepcopy(_PLAN_CACHE[cache_key])
+            cached["cached"] = True
+            return cached
     metrics.cache_misses += 1
-    selected = _select_tools(task, active_registry, top_k=top_k, token_budget=max(token_budget, 1))
+    selected = _select_tools(task, active_registry, top_k=top_k, token_budget=token_budget)
     plan = build_plan(task, selected)
     all_tools = active_registry.all()
     result = {
@@ -179,7 +192,11 @@ def route_task(
         "cached": False,
     }
     metrics.observe_latency(started)
-    _PLAN_CACHE[cache_key] = result
+    with _PLAN_CACHE_LOCK:
+        if ROUTER_PLAN_CACHE_MAX_ENTRIES > 0:
+            _PLAN_CACHE[cache_key] = deepcopy(result)
+            while len(_PLAN_CACHE) > ROUTER_PLAN_CACHE_MAX_ENTRIES:
+                _PLAN_CACHE.popitem(last=False)
     return result
 
 

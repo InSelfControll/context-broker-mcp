@@ -65,7 +65,7 @@ def _prompts_from_result(server: str, result: Any) -> list[DownstreamPrompt]:
             server=server,
             name=str(_obj_get(prompt, "name", "")),
             description=str(_obj_get(prompt, "description", "") or ""),
-            arguments=list(_obj_get(prompt, "arguments", []) or []),
+            arguments=[_as_dict(arg) for arg in (_obj_get(prompt, "arguments", []) or [])],
         )
         for prompt in prompts
         if _obj_get(prompt, "name", None)
@@ -97,25 +97,63 @@ class ManagedDownstreamConnection:
     capabilities: DownstreamCapabilities | None = None
     last_error: str | None = None
     reconnect_count: int = 0
-    _session_cm: AsyncContextManager[Any] | None = field(default=None, init=False, repr=False)
     _session: Any | None = field(default=None, init=False, repr=False)
+    _session_task: asyncio.Task[None] | None = field(default=None, init=False, repr=False)
+    _session_stop: asyncio.Event | None = field(default=None, init=False, repr=False)
+    _lifecycle_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     async def connect(self) -> DownstreamCapabilities:
         """Connect, initialize, and discover downstream capabilities."""
         self.config.validate()
+        async with self._lifecycle_lock:
+            if self.state == ConnectionState.READY and self._session is not None:
+                return cast(DownstreamCapabilities, self.capabilities)
+            return await self._connect_locked()
+
+    async def _serve_session(
+        self, ready: asyncio.Future[DownstreamCapabilities], stop: asyncio.Event
+    ) -> None:
+        """Own both entry and exit of the SDK's task-local cancellation scopes."""
+        try:
+            async with self.session_factory(self.config) as session:
+                self._session = session
+                capabilities = await self.discover_capabilities()
+                ready.set_result(capabilities)
+                await stop.wait()
+        except Exception as exc:
+            self.last_error = str(exc)
+            if not ready.done():
+                ready.set_exception(exc)
+        finally:
+            self._session = None
+            self.capabilities = None
+            if not ready.done():
+                ready.cancel()
+            if self.state == ConnectionState.READY:
+                self.state = ConnectionState.DISCONNECTED
+
+    async def _connect_locked(self) -> DownstreamCapabilities:
+        await self._close_session()
         self.state = ConnectionState.CONNECTING
         self.last_error = None
         attempt = 0
         while True:
             try:
-                self._session_cm = self.session_factory(self.config)
-                self._session = await self._session_cm.__aenter__()
-                self.capabilities = await self.discover_capabilities()
+                ready = asyncio.get_running_loop().create_future()
+                self._session_stop = asyncio.Event()
+                self._session_task = asyncio.create_task(
+                    self._serve_session(ready, self._session_stop)
+                )
+                self.capabilities = await asyncio.wait_for(ready, self.config.timeout_seconds)
                 self.state = ConnectionState.READY
                 return self.capabilities
+            except asyncio.CancelledError:
+                await self._close_session()
+                self.state = ConnectionState.DISCONNECTED
+                raise
             except Exception as exc:
                 self.last_error = str(exc)
-                await self.disconnect()
+                await self._close_session()
                 if attempt >= self.config.reconnect_attempts:
                     self.state = ConnectionState.FAILED
                     raise
@@ -125,15 +163,26 @@ class ManagedDownstreamConnection:
 
     async def disconnect(self) -> None:
         """Close the active session if one exists."""
-        if self._session_cm is not None:
-            try:
-                await self._session_cm.__aexit__(None, None, None)
-            except Exception as exc:  # pragma: no cover - defensive cleanup logging
-                log(f"⚠️ Downstream MCP close failed for {self.config.name}: {exc}", "WARN")
-        self._session_cm = None
-        self._session = None
-        if self.state != ConnectionState.FAILED:
+        async with self._lifecycle_lock:
+            await self._close_session()
             self.state = ConnectionState.DISCONNECTED
+
+    async def _close_session(self) -> None:
+        if self._session_stop is not None:
+            self._session_stop.set()
+        if self._session_task is not None:
+            if self.state == ConnectionState.CONNECTING:
+                self._session_task.cancel()
+            try:
+                await asyncio.wait_for(self._session_task, self.config.timeout_seconds)
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # pragma: no cover - defensive cleanup
+                log(f"⚠️ Downstream MCP close failed for {self.config.name}: {exc}", "WARN")
+        self._session_task = None
+        self._session_stop = None
+        self._session = None
+        self.capabilities = None
 
     async def ensure_ready(self) -> None:
         """Reconnect when no usable session is present."""
@@ -144,9 +193,9 @@ class ManagedDownstreamConnection:
         """Run capability discovery against the active MCP session."""
         if self._session is None:
             raise RuntimeError("downstream session is not connected")
-        tools_result = await self._session.list_tools()
-        prompts_result = await self._session.list_prompts()
-        resources_result = await self._session.list_resources()
+        tools_result = await self._list_capability("tools")
+        prompts_result = await self._list_capability("prompts")
+        resources_result = await self._list_capability("resources")
         capabilities = DownstreamCapabilities(
             server=self.config.name,
             tools=_tools_from_result(self.config.name, tools_result),
@@ -161,13 +210,36 @@ class ManagedDownstreamConnection:
         self.capabilities = capabilities
         return capabilities
 
+    async def _list_capability(self, kind: str) -> dict[str, Any]:
+        getter = getattr(self._session, "get_server_capabilities", None)
+        advertised = getter() if callable(getter) else None
+        if advertised is not None and _obj_get(advertised, kind) is None:
+            return {kind: []}
+        method = getattr(self._session, f"list_{kind}")
+        items: list[Any] = []
+        cursor = None
+        seen: set[str] = set()
+        while True:
+            page = await method(cursor=cursor) if cursor is not None else await method()
+            items.extend(_obj_get(page, kind, []) or [])
+            cursor = _obj_get(page, "nextCursor")
+            if not cursor:
+                return {kind: [_as_dict(item) for item in items]}
+            if cursor in seen:
+                raise RuntimeError(f"downstream {kind} discovery repeated a pagination cursor")
+            seen.add(cursor)
+
     async def heartbeat(self) -> bool:
         """Return True when the downstream server responds to a lightweight probe."""
         try:
             await self.ensure_ready()
             if self._session is None:
                 return False
-            await self._session.list_tools()
+            ping = getattr(self._session, "send_ping", None)
+            if callable(ping):
+                await asyncio.wait_for(ping(), self.config.timeout_seconds)
+            else:
+                await asyncio.wait_for(self._list_capability("tools"), self.config.timeout_seconds)
             self.state = ConnectionState.READY
             return True
         except Exception as exc:
@@ -191,7 +263,9 @@ class ManagedDownstreamConnection:
         await self.ensure_ready()
         if self._session is None:
             raise RuntimeError("downstream session is not connected")
-        result = await self._session.call_tool(name, arguments or {})
+        result = await asyncio.wait_for(
+            self._session.call_tool(name, arguments or {}), self.config.timeout_seconds
+        )
         return DownstreamCallResult(
             server=self.config.name,
             tool=name,
@@ -211,6 +285,12 @@ class DownstreamConnectionManager:
     def register(self, config: DownstreamServerConfig) -> ManagedDownstreamConnection:
         """Register or replace one downstream server config."""
         config.validate()
+        existing = self._connections.get(config.name)
+        if existing is not None:
+            if existing.config == config:
+                return existing
+            if existing._session_task is not None:
+                raise ValueError("disconnect the downstream server before replacing its config")
         connection = ManagedDownstreamConnection(config, self.session_factory)
         self._connections[config.name] = connection
         return connection
@@ -225,13 +305,14 @@ class DownstreamConnectionManager:
 
     async def connect_all(self) -> dict[str, dict[str, Any]]:
         """Connect to every registered downstream server in parallel."""
+        connections = self.all()
         results = await asyncio.gather(
-            *(connection.connect() for connection in self.all()),
+            *(connection.connect() for connection in connections),
             return_exceptions=True,
         )
         output: dict[str, dict[str, Any]] = {}
-        for connection, result in zip(self.all(), results, strict=True):
-            if isinstance(result, Exception):
+        for connection, result in zip(connections, results, strict=True):
+            if isinstance(result, BaseException):
                 output[connection.config.name] = {
                     "state": connection.state.value,
                     "error": str(result),
@@ -256,13 +337,14 @@ class DownstreamConnectionManager:
 
     async def heartbeat_all(self) -> dict[str, bool]:
         """Heartbeat all registered downstream servers in parallel."""
+        connections = self.all()
         results = await asyncio.gather(
-            *(connection.heartbeat() for connection in self.all()),
+            *(connection.heartbeat() for connection in connections),
             return_exceptions=True,
         )
         return {
-            connection.config.name: bool(result) if not isinstance(result, Exception) else False
-            for connection, result in zip(self.all(), results, strict=True)
+            connection.config.name: bool(result) if not isinstance(result, BaseException) else False
+            for connection, result in zip(connections, results, strict=True)
         }
 
     async def call_tool(

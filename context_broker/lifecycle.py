@@ -8,6 +8,7 @@ import ctypes
 import gc
 import os
 import signal
+import stat
 import sys
 import threading
 import time
@@ -19,6 +20,7 @@ from context_broker.config import (
     IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS,
     IDLE_RESOURCE_TIMEOUT_SECONDS,
     PARENT_POLL_INTERVAL_SECONDS,
+    TRANSPORT,
 )
 from context_broker.indexer_ttc.tools import state
 from context_broker.utils import log
@@ -41,6 +43,9 @@ def start_lifecycle_watchdogs() -> None:
         _mark_activity_locked()
         startup_chain = _get_startup_ancestor_chain()
 
+    if TRANSPORT == "stdio":
+        _start_stdio_disconnect_watchdog()
+
     if EXIT_WHEN_PARENT_DIES and startup_chain:
         _arm_parent_death_signal(startup_chain[0])
         threading.Thread(
@@ -62,6 +67,42 @@ def mark_activity() -> None:
     """Record broker activity without changing active-operation count."""
     with _WATCHDOG_LOCK:
         _mark_activity_locked()
+
+
+def _start_stdio_disconnect_watchdog() -> None:
+    """Observe Linux stdin hangup without consuming MCP protocol bytes."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        fd = sys.stdin.fileno()
+        mode = os.fstat(fd).st_mode
+    except (AttributeError, OSError, ValueError):
+        return
+    if not (stat.S_ISFIFO(mode) or stat.S_ISSOCK(mode)):
+        return
+    threading.Thread(
+        target=_monitor_stdio_disconnect,
+        args=(fd,),
+        name="context-broker-stdio-watchdog",
+        daemon=True,
+    ).start()
+
+
+def _monitor_stdio_disconnect(fd: int) -> None:
+    """Stop a busy broker when an editor closes its stdio connection."""
+    import select
+
+    poller = select.poll()
+    poller.register(fd, select.POLLHUP | select.POLLERR)
+    while True:
+        try:
+            events = poller.poll(1000)
+        except OSError:
+            return
+        for _, event in events:
+            if event & (select.POLLHUP | select.POLLERR | select.POLLNVAL):
+                _exit_orphaned_process("MCP client closed its stdio connection")
+                return
 
 
 def begin_operation() -> None:
