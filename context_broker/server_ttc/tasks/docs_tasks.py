@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.docs_ttc.codebase.api import docs_stats, ensure_docs, scan_docs
@@ -36,7 +38,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = ensure_docs(str(root), since=since)
+                result = await run_blocking(ensure_docs, str(root), since=since)
                 status = result["status"]
                 created = result.get("created_count", 0)
                 existing = result.get("existing_count", 0)
@@ -99,7 +101,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = scan_docs(str(root), since=since)
+                result = await run_blocking(scan_docs, str(root), since=since)
                 status = result["status"]
                 missing_count = result.get("missing_count", 0)
 
@@ -153,7 +155,7 @@ def register_docs_tools(mcp: FastMCP) -> None:
         with tracked_activity():
             root = resolve_project_root(project_root)
             try:
-                result = docs_stats(str(root))
+                result = await run_blocking(docs_stats, str(root))
                 status = result["status"]
 
                 if status == "missing":

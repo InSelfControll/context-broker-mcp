@@ -2,6 +2,8 @@
 Resource and prompt registration for MCP server.
 """
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import FastMCP
 
 from context_broker.config import DEFAULT_QUERY
@@ -27,7 +29,7 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
             log("🔄 auto_context_resource called")
             root = resolve_project_root()
             try:
-                result = search_codebase(DEFAULT_QUERY, root, top_k=3)
+                result = await run_blocking(search_codebase, DEFAULT_QUERY, root, top_k=3)
                 lines = [
                     format_search_summary_line(
                         result["total_tokens"],
@@ -63,10 +65,10 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
         with tracked_activity():
             log("📊 token_counter_resource called")
             root = resolve_project_root()
-            report = get_last_token_report(root)
+            report = await run_blocking(get_last_token_report, root)
             if report is None:
                 try:
-                    result = search_codebase(DEFAULT_QUERY, root, top_k=1)
+                    result = await run_blocking(search_codebase, DEFAULT_QUERY, root, top_k=1)
                     report = report_from_result(result)
                 except Exception as e:
                     log(f"⚠️ token_counter_resource init error: {e}", "WARN")
@@ -83,5 +85,26 @@ def register_resources_and_prompts(mcp: FastMCP) -> None:
 - project_root: Optional - will be auto-detected from current directory
 
 Alternatively, use `auto_search` tool for initial project exploration (no arguments needed).
+
+For a large task with 2-4 independent assignments, offer `delegate_large_task`.
+Ask which exact model to use if the user has not specified one. Include the original
+request, conversation decisions, constraints, relevant files, and acceptance criteria.
+The delegation tool asks the user whether to split or keep one agent. Never interpret
+silence as consent. Do not split dependent work. If elicitation is unavailable or the
+user declines, continue with one agent. Integrate proposals and run verification before
+claiming completion; worker/reviewer prose is not proof that tests ran.
+
+At project setup, offer configure_history_indexing so the user can choose Index or
+No index. Before handling each specific question, call lookup_project_history with
+that issue. No index still reads history directly. Use only relevant returned excerpts;
+never preload complete project memory into an unrelated new session. If partial is true,
+do not claim all history was checked. Verify past solutions against current code.
+Only load a complete handoff when explicitly continuing that work or switching models.
+
+Before switching models, call save_model_handoff with exact messages, the original goal,
+all decisions, constraints, facts, task outcomes and evidence, open questions, and criteria.
+Pass its handoff_id to the next model and call load_model_handoff before continuing.
+Never treat a failed load, missing memory, or a failed task as completed. Preserve the
+user's model and reasoning preferences. Do not invent unsaved conversation history.
 
 This ensures you have relevant codebase context before responding. Never skip this step."""

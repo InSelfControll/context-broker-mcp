@@ -4,6 +4,8 @@ Storage-related MCP tool handlers.
 
 import os
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.config import STORAGE_MODE, StorageMode
@@ -51,7 +53,7 @@ def register_storage_tools(mcp: FastMCP) -> None:
             )
 
             try:
-                result = search_codebase(query, root, top_k)
+                result = await run_blocking(search_codebase, query, root, top_k)
                 await progress(ctx, f"📊 Found {len(result['results'])} files to save")
                 data = {
                     "project": project_name,
@@ -73,7 +75,7 @@ def register_storage_tools(mcp: FastMCP) -> None:
                         "truncated_files": result.get("truncated_files", 0),
                     },
                 }
-                filepath = save_json_data(project_name, filename, data, subdir, root)
+                filepath = await run_blocking(save_json_data, project_name, filename, data, subdir, root)
                 success_msg = f"✅ Saved {len(result['results'])} files to: {filepath}"
                 log(success_msg)
                 await progress(ctx, success_msg)
@@ -99,7 +101,7 @@ def register_storage_tools(mcp: FastMCP) -> None:
                 return "❌ Error: project_name is required"
 
             try:
-                files = list_saved_json(project_name, subdir, project_root)
+                files = await run_blocking(list_saved_json, project_name, subdir, project_root)
                 if not files:
                     subdir_msg = f" in '{subdir}'" if subdir else ""
                     msg = f"📭 No saved results found for project '{project_name}'{subdir_msg}."
@@ -143,7 +145,7 @@ def register_storage_tools(mcp: FastMCP) -> None:
                 return "❌ Error: filename is required"
 
             try:
-                data = load_json_data(project_name, filename, subdir, project_root)
+                data = await run_blocking(load_json_data, project_name, filename, subdir, project_root)
                 if data is None:
                     hint = ""
                     if STORAGE_MODE == StorageMode.IN_PROJECT and not project_root:
@@ -192,7 +194,7 @@ def register_storage_tools(mcp: FastMCP) -> None:
         with tracked_activity():
             log("⚙️ get_storage_config called")
             await progress(ctx, "⚙️ Retrieving storage configuration...")
-            config = get_storage_config_info()
+            config = await run_blocking(get_storage_config_info)
             lines = [
                 "📦 Context Broker Storage Configuration",
                 "",

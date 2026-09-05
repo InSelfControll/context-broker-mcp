@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from contextlib import closing
 import hashlib
 import json
 import math
@@ -13,6 +14,7 @@ from typing import Any, Iterable
 
 from context_broker.client_ttc.tools.contract_tools import DownstreamCapabilities
 from context_broker.config import CACHE_DIR
+from context_broker.storage_ttc.tools.json_tools import atomic_write_json
 from context_broker.utils import log
 
 _WORD_RE = re.compile(r"[a-zA-Z0-9_\-/]+")
@@ -170,9 +172,7 @@ class ToolRegistry:
 
     def register(self, descriptor: ToolDescriptor) -> None:
         """Register or replace one descriptor."""
-        self._tools[descriptor.id] = descriptor
-        self._vectors[descriptor.id] = _vectorize(descriptor.searchable_text())
-        self.save_cache()
+        self.register_many([descriptor])
 
     def register_many(self, descriptors: Iterable[ToolDescriptor]) -> None:
         """Register many descriptors and persist the resulting cache."""
@@ -190,6 +190,9 @@ class ToolRegistry:
             for tool in payload.get("tools", [])
             if tool.get("name")
         ]
+        for tool_id in [key for key, tool in self._tools.items() if tool.server == server]:
+            del self._tools[tool_id]
+            self._vectors.pop(tool_id, None)
         self.register_many(descriptors)
 
     def get(self, tool_id: str) -> ToolDescriptor | None:
@@ -218,7 +221,7 @@ class ToolRegistry:
         """Persist descriptors and vectors to JSON, SQLite, and optional Redis."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         payload = self._payload()
-        self.cache_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+        atomic_write_json(self.cache_path, payload)
         self.save_sqlite()
         self.save_redis(payload)
 
@@ -239,7 +242,7 @@ class ToolRegistry:
     def save_sqlite(self) -> None:
         """Persist descriptors to SQLite fallback cache."""
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.sqlite_path) as conn:
+        with closing(sqlite3.connect(self.sqlite_path)) as conn, conn:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS tool_descriptors "
                 "(id TEXT PRIMARY KEY, payload TEXT NOT NULL, vector TEXT NOT NULL)"
@@ -262,7 +265,7 @@ class ToolRegistry:
         if not self.sqlite_path.exists():
             return False
         try:
-            with sqlite3.connect(self.sqlite_path) as conn:
+            with closing(sqlite3.connect(self.sqlite_path)) as conn:
                 rows = conn.execute("SELECT payload, vector FROM tool_descriptors").fetchall()
             self._tools.clear()
             self._vectors.clear()
@@ -288,8 +291,12 @@ class ToolRegistry:
         try:
             import redis
 
-            client = redis.Redis.from_url(self.redis_url)
-            client.set("context-broker:ucr:tool-registry", json.dumps(payload, ensure_ascii=False))
+            with redis.Redis.from_url(
+                self.redis_url, socket_connect_timeout=1, socket_timeout=1
+            ) as client:
+                client.set(
+                    "context-broker:ucr:tool-registry", json.dumps(payload, ensure_ascii=False)
+                )
             return True
         except Exception as exc:  # pragma: no cover - optional dependency/server
             log(f"⚠️ UCR registry Redis save skipped: {exc}", "WARN")
@@ -302,8 +309,10 @@ class ToolRegistry:
         try:
             import redis
 
-            client = redis.Redis.from_url(self.redis_url)
-            raw = client.get("context-broker:ucr:tool-registry")
+            with redis.Redis.from_url(
+                self.redis_url, socket_connect_timeout=1, socket_timeout=1
+            ) as client:
+                raw = client.get("context-broker:ucr:tool-registry")
             if not raw:
                 return False
             return self._load_payload(json.loads(raw))

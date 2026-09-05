@@ -2,26 +2,55 @@
 Storage path helpers and mode routing.
 """
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 from context_broker.config import IN_PROJECT_FOLDER, STORAGE_BASE_DIR, STORAGE_MODE, StorageMode
 from context_broker.utils import log
 
 
+def contained_path(base: Path, *parts: str) -> Path:
+    """Resolve relative storage components without traversal or symlink escapes."""
+    for part in parts:
+        if (
+            Path(part).is_absolute()
+            or PureWindowsPath(part).drive
+            or "\\" in part
+            or ".." in Path(part).parts
+            or "\x00" in part
+        ):
+            raise ValueError("storage paths must be relative and stay inside storage")
+    candidate = base.joinpath(*parts)
+    if not candidate.resolve().is_relative_to(base.resolve()):
+        raise ValueError("storage path escapes its storage directory")
+    return candidate
+
+
 def get_storage_dirs(
     project_name: str, subdir: str = "", project_root: str = ""
 ) -> tuple[Optional[Path], Path]:
     """Get local and global storage directories for a project."""
-    global_path = Path(STORAGE_BASE_DIR) / project_name
-    if subdir:
-        global_path = global_path / subdir
+    from context_broker.shared_ttc.tools.scope import PROJECT_ROOT
+    from context_broker.project import resolve_project_root, get_project_name
+
+    if PROJECT_ROOT.get():
+        project_root = resolve_project_root(project_root)
+        if project_name != get_project_name(project_root):
+            raise ValueError("project_name does not match this connection's project")
+    if not project_name or project_name in {".", ".."} or "/" in project_name:
+        raise ValueError("project_name must be a non-empty directory name")
+    global_name = project_name
+    if PROJECT_ROOT.get():
+        import hashlib
+
+        digest = hashlib.sha256(project_root.encode()).hexdigest()[:20]
+        global_name = f"{project_name}-{digest}"
+    global_path = contained_path(Path(STORAGE_BASE_DIR), global_name, subdir)
 
     local_path: Optional[Path] = None
     if project_root:
-        local_path = Path(project_root) / IN_PROJECT_FOLDER
-        if subdir:
-            local_path = local_path / subdir
+        local_path = contained_path(Path(project_root), IN_PROJECT_FOLDER)
+        local_path = contained_path(local_path, subdir)
     return local_path, global_path
 
 

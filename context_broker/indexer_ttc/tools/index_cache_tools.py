@@ -10,35 +10,65 @@ from __future__ import annotations
 
 import json
 import os
+from functools import wraps
 from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+from filelock import FileLock, Timeout
 
 from context_broker.config import EMBEDDING_MODEL, INDEX_DISK_CACHE_ENABLED
 from context_broker.indexer_ttc.tools.cache_tools import (
     generate_index_fingerprint,
-    get_file_mtimes,
 )
 from context_broker.utils import log
 
 _INDEX_META_NAME = "context-broker-index.json"
 _INDEX_VECTORS_NAME = "context-broker-index.npy"
-_INDEX_CACHE_VERSION = 1
+_INDEX_CACHE_VERSION = 2
 
 
 def get_index_cache_paths(project_root: str | Path) -> tuple[Path, Path]:
     """Return ``(metadata_json, embeddings_npy)`` paths under project ``.cache/``."""
-    cache_dir = Path(project_root) / ".cache"
+    from context_broker.storage_ttc.tools.path_tools import contained_path
+
+    cache_dir = contained_path(Path(project_root), ".cache")
     cache_dir.mkdir(exist_ok=True)
     return cache_dir / _INDEX_META_NAME, cache_dir / _INDEX_VECTORS_NAME
 
 
 def build_corpus_fingerprint(paths: list[str]) -> str:
-    """Fingerprint the indexed corpus from absolute path mtimes."""
-    return generate_index_fingerprint(get_file_mtimes(paths))
+    """Fingerprint additions, deletions, sizes, and nanosecond file changes."""
+    signatures = {}
+    for path in paths:
+        try:
+            st = os.stat(path)
+            signatures[path] = (st.st_mtime_ns, st.st_ctime_ns, st.st_size)
+        except OSError:
+            signatures[path] = None
+    return generate_index_fingerprint(signatures)
 
 
+def _locked_cache(function):
+    """Serialize optional disk-cache operations across broker processes."""
+
+    @wraps(function)
+    def locked(project_root, *args, **kwargs):
+        fallback = None if function.__name__ == "load_index_cache" else False
+        if not INDEX_DISK_CACHE_ENABLED and function.__name__ != "clear_index_cache":
+            return fallback
+        try:
+            meta, _ = get_index_cache_paths(project_root)
+            with FileLock(str(meta) + ".lock", timeout=30):
+                return function(project_root, *args, **kwargs)
+        except (OSError, Timeout) as exc:
+            log(f"⚠️ Optional index cache unavailable: {exc}", "WARN")
+            return fallback
+
+    return locked
+
+
+@_locked_cache
 def save_index_cache(
     project_root: str,
     *,
@@ -46,6 +76,8 @@ def save_index_cache(
     embeddings: np.ndarray,
     total_tokens: int,
     model_name: str = EMBEDDING_MODEL,
+    source_paths: list[str] | None = None,
+    source_fingerprint: str | None = None,
 ) -> bool:
     """Persist embeddings and path metadata. Returns True on success."""
     if not INDEX_DISK_CACHE_ENABLED:
@@ -54,12 +86,15 @@ def save_index_cache(
         return False
 
     meta_path, vectors_path = get_index_cache_paths(project_root)
-    fingerprint = build_corpus_fingerprint(paths)
+    fingerprint = source_fingerprint or build_corpus_fingerprint(
+        source_paths if source_paths is not None else paths
+    )
     payload = {
         "version": _INDEX_CACHE_VERSION,
         "model": model_name,
         "fingerprint": fingerprint,
         "paths": paths,
+        "source_paths": source_paths if source_paths is not None else paths,
         "total_tokens": int(total_tokens),
         "embedding_shape": list(np.asarray(embeddings).shape),
         "embedding_dtype": str(np.asarray(embeddings).dtype),
@@ -89,6 +124,7 @@ def save_index_cache(
         return False
 
 
+@_locked_cache
 def load_index_cache(
     project_root: str,
     *,
@@ -114,7 +150,7 @@ def load_index_cache(
         log(f"⚠️ Index cache meta load failed: {exc}", "WARN")
         return None
 
-    if int(meta.get("version", 0)) != _INDEX_CACHE_VERSION:
+    if not isinstance(meta, dict) or meta.get("version") != _INDEX_CACHE_VERSION:
         log("⚠️ Index cache version mismatch; rebuilding", "WARN")
         return None
     if meta.get("model") != model_name:
@@ -128,7 +164,11 @@ def load_index_cache(
     cached_paths = meta.get("paths") or []
     if not isinstance(cached_paths, list) or not cached_paths:
         return None
-    if list(cached_paths) != list(current_paths):
+    if not all(isinstance(path, str) for path in cached_paths):
+        return None
+    if not set(cached_paths).issubset(current_paths):
+        return None
+    if meta.get("source_paths") != list(current_paths):
         log("🔄 Index cache path set changed; rebuilding")
         return None
 
@@ -138,29 +178,36 @@ def load_index_cache(
         return None
 
     try:
-        embeddings = np.load(vectors_path, allow_pickle=False)
+        embeddings = np.load(vectors_path, allow_pickle=False, mmap_mode="r")
     except Exception as exc:
         log(f"⚠️ Index cache vectors load failed: {exc}", "WARN")
         return None
 
     expected_shape = meta.get("embedding_shape")
-    if expected_shape is not None and list(embeddings.shape) != list(expected_shape):
+    if not isinstance(expected_shape, list) or list(embeddings.shape) != expected_shape:
         log("⚠️ Index cache embedding shape mismatch; rebuilding", "WARN")
         return None
-    if embeddings.shape[0] != len(current_paths):
+    if embeddings.ndim != 2 or embeddings.shape[0] != len(cached_paths):
         log("⚠️ Index cache row count mismatch; rebuilding", "WARN")
+        return None
+
+    if embeddings.dtype != np.float32:
+        return None
+    total_tokens = meta.get("total_tokens", 0)
+    if not isinstance(total_tokens, int) or total_tokens < 0:
         return None
 
     log(f"⚡ Loaded index cache ({len(current_paths)} files) from disk")
     return {
         "paths": list(cached_paths),
         "embeddings": embeddings,
-        "total_tokens": int(meta.get("total_tokens", 0)),
+        "total_tokens": total_tokens,
         "fingerprint": expected_fp,
         "from_disk": True,
     }
 
 
+@_locked_cache
 def clear_index_cache(project_root: str) -> bool:
     """Delete on-disk index cache files for *project_root*."""
     meta_path, vectors_path = get_index_cache_paths(project_root)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import pytest
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -117,6 +118,190 @@ def test_connection_manager_discovers_capabilities_and_calls_tools() -> None:
         result = await manager.call_tool("context7", "search", {"query": "auth"})
         assert result.ok is True
         assert session.tool_calls == [("search", {"query": "auth"})]
+
+    asyncio.run(run())
+
+
+def test_repeated_connect_keeps_one_session_and_disconnect_clears_discovery() -> None:
+    opens = []
+    closes = []
+
+    @asynccontextmanager
+    async def factory(config):
+        opens.append(config.name)
+        try:
+            yield FakeSession()
+        finally:
+            closes.append(config.name)
+
+    async def run():
+        manager = DownstreamConnectionManager(session_factory=factory)
+        connection = manager.register(
+            DownstreamServerConfig(
+                name="demo", transport=DownstreamTransport.STDIO, command="unused"
+            )
+        )
+        await connection.connect()
+        await connection.connect()
+        assert opens == ["demo"]
+        await connection.disconnect()
+        assert closes == ["demo"]
+        assert connection.capabilities is None
+
+    asyncio.run(run())
+
+
+def test_session_context_is_closed_in_the_task_that_opened_it() -> None:
+    ownership = []
+
+    @asynccontextmanager
+    async def factory(_config):
+        owner = asyncio.current_task()
+        try:
+            yield FakeSession()
+        finally:
+            ownership.append(owner is asyncio.current_task())
+
+    async def run():
+        manager = DownstreamConnectionManager(session_factory=factory)
+        connection = manager.register(
+            DownstreamServerConfig(
+                name="demo", transport=DownstreamTransport.STDIO, command="unused"
+            )
+        )
+        await manager.connect_all()
+        await connection.disconnect()
+        assert ownership == [True]
+
+    asyncio.run(run())
+
+
+def test_discovery_respects_optional_capabilities_and_pagination() -> None:
+    class ToolsOnlySession(FakeSession):
+        def get_server_capabilities(self):
+            return SimpleNamespace(tools={}, prompts=None, resources=None)
+
+        async def list_tools(self, cursor=None):
+            return {
+                "tools": [{"name": "second" if cursor else "first"}],
+                "nextCursor": None if cursor else "page-2",
+            }
+
+        async def list_prompts(self):
+            raise AssertionError("prompts are not supported")
+
+        async def list_resources(self):
+            raise AssertionError("resources are not supported")
+
+    @asynccontextmanager
+    async def factory(_config):
+        yield ToolsOnlySession()
+
+    async def run():
+        manager = DownstreamConnectionManager(session_factory=factory)
+        connection = manager.register(
+            DownstreamServerConfig(
+                name="demo",
+                transport=DownstreamTransport.STDIO,
+                command="unused",
+                reconnect_attempts=0,
+            )
+        )
+        try:
+            capabilities = await connection.connect()
+            assert [tool.name for tool in capabilities.tools] == ["first", "second"]
+            assert capabilities.prompts == []
+            assert capabilities.resources == []
+        finally:
+            await connection.disconnect()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"transport": "unsupported"},
+        {"timeout_seconds": 0},
+        {"timeout_seconds": float("nan")},
+        {"reconnect_attempts": -1},
+        {"reconnect_backoff_seconds": -1},
+    ],
+)
+def test_invalid_connection_limits_are_rejected(overrides) -> None:
+    values = {"name": "demo", "transport": DownstreamTransport.STDIO, "command": "unused"}
+    values.update(overrides)
+    with pytest.raises(ValueError):
+        DownstreamServerConfig(**values).validate()
+
+
+def test_real_stdio_server_connect_call_and_cleanup(tmp_path) -> None:
+    """Exercise SDK task groups and subprocess teardown, not just fake sessions."""
+    import sys
+
+    script = tmp_path / "mcp_fixture.py"
+    script.write_text(
+        "from fastmcp import FastMCP\n"
+        "mcp = FastMCP('fixture')\n"
+        "@mcp.tool()\n"
+        "def echo(value: str) -> str:\n"
+        "    return value\n"
+        "mcp.run(transport='stdio', show_banner=False)\n"
+    )
+
+    async def run():
+        manager = DownstreamConnectionManager()
+        connection = manager.register(
+            DownstreamServerConfig(
+                name="fixture",
+                transport=DownstreamTransport.STDIO,
+                command=sys.executable,
+                args=[str(script)],
+                reconnect_attempts=0,
+            )
+        )
+        try:
+            connected = await manager.connect_all()
+            assert connected["fixture"]["state"] == "ready"
+            result = await manager.call_tool("fixture", "echo", {"value": "round-trip"})
+            assert result.ok
+            assert result.content[0].text == "round-trip"
+        finally:
+            await connection.disconnect()
+        assert connection.last_error is None
+        assert connection.capabilities is None
+
+    asyncio.run(asyncio.wait_for(run(), timeout=30))
+
+
+def test_tool_timeout_cancels_request_without_replaying_it() -> None:
+    calls = []
+
+    class SlowSession(FakeSession):
+        async def call_tool(self, name, arguments):
+            calls.append(name)
+            await asyncio.Event().wait()
+
+    @asynccontextmanager
+    async def factory(_config):
+        yield SlowSession()
+
+    async def run():
+        manager = DownstreamConnectionManager(session_factory=factory)
+        connection = manager.register(
+            DownstreamServerConfig(
+                name="demo",
+                transport=DownstreamTransport.STDIO,
+                command="unused",
+                timeout_seconds=0.02,
+            )
+        )
+        try:
+            with pytest.raises(TimeoutError):
+                await manager.call_tool("demo", "slow")
+            assert calls == ["slow"]
+        finally:
+            await connection.disconnect()
 
     asyncio.run(run())
 
