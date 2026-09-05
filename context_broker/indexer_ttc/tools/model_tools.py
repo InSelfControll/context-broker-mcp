@@ -2,31 +2,60 @@
 Model and tokenizer lifecycle helpers.
 """
 
-import tiktoken
-import torch
-from sentence_transformers import SentenceTransformer
+from __future__ import annotations
 
-from context_broker.config import EMBEDDING_MODEL, ENCODING_MODEL, MODEL_DEVICE, MODEL_LOCAL_ONLY, WORKER_CORES
+import importlib
+from typing import Any
+
+import tiktoken
+
+from context_broker.config import (
+    EMBEDDING_MODEL,
+    ENCODING_MODEL,
+    MODEL_DEVICE,
+    MODEL_LOCAL_ONLY,
+    WORKER_CORES,
+)
 from context_broker.indexer_ttc.tools import state
 from context_broker.utils import log
 
 
-def _create_model(*, local_files_only: bool) -> SentenceTransformer:
+def __getattr__(name: str) -> Any:
+    """Load ML libraries only when semantic inference is first requested."""
+    if name in globals():
+        return globals()[name]
+    if name == "torch":
+        value = importlib.import_module("torch")
+    elif name == "SentenceTransformer":
+        value = importlib.import_module("sentence_transformers").SentenceTransformer
+    else:
+        raise AttributeError(name)
+    globals()[name] = value
+    return value
+
+
+def _create_model(*, local_files_only: bool) -> Any:
     """Create the configured embedding model with the requested cache policy."""
-    return SentenceTransformer(
+    return __getattr__("SentenceTransformer")(
         EMBEDDING_MODEL,
         device=MODEL_DEVICE,
         local_files_only=local_files_only,
     )
 
 
-def get_model() -> SentenceTransformer:
-    """Get or create shared sentence transformer model."""
+def get_model() -> Any:
+    """Initialize one model even when multiple sessions arrive concurrently."""
+    with state.MODEL_LOCK:
+        return _load_model()
+
+
+def _load_model() -> Any:
+    """Load the model while holding the shared initialization lock."""
     if state.SHARED_MODEL is None:
         log(f"🧠 Loading embedding model: {EMBEDDING_MODEL}")
-        torch.set_num_threads(WORKER_CORES)
+        __getattr__("torch").set_num_threads(WORKER_CORES)
         try:
-            torch.set_num_interop_threads(WORKER_CORES)
+            __getattr__("torch").set_num_interop_threads(WORKER_CORES)
         except Exception:
             pass
         if MODEL_LOCAL_ONLY:
@@ -56,6 +85,7 @@ def get_model() -> SentenceTransformer:
 
 def get_encoder() -> tiktoken.Encoding:
     """Get or create shared tokenizer."""
-    if state.ENCODER is None:
-        state.ENCODER = tiktoken.get_encoding(ENCODING_MODEL)
-    return state.ENCODER
+    with state.MODEL_LOCK:
+        if state.ENCODER is None:
+            state.ENCODER = tiktoken.get_encoding(ENCODING_MODEL)
+        return state.ENCODER

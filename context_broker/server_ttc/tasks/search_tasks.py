@@ -2,6 +2,8 @@
 Search-related MCP tool handlers.
 """
 
+from context_broker.server_ttc.tools.blocking import run_blocking
+
 from fastmcp import Context, FastMCP
 
 from context_broker.indexer import literal_search, search_codebase
@@ -32,7 +34,7 @@ def register_search_tools(mcp: FastMCP) -> None:
             root = resolve_project_root(project_root)
             try:
                 await progress(ctx, f"📁 Project root resolved to: {root}")
-                result = search_codebase(query, root, top_k=5)
+                result = await run_blocking(search_codebase, query, root, top_k=5)
                 tok_line = format_search_summary_line(
                     result["total_tokens"],
                     result["context_tokens"],
@@ -87,7 +89,7 @@ def register_search_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = search_codebase(
+                result = await run_blocking(search_codebase,
                     "main entry point configuration setup architecture",
                     root,
                     top_k=5,
@@ -160,7 +162,7 @@ def register_search_tools(mcp: FastMCP) -> None:
 
             root = resolve_project_root(project_root)
             try:
-                result = literal_search(
+                result = await run_blocking(literal_search,
                     pattern,
                     root,
                     case_sensitive=case_sensitive,

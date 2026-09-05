@@ -20,6 +20,217 @@ Context Broker uses **one local ML model** — an embedding model, not a chat/LL
 - Explicit `HF_HUB_OFFLINE=1` or `TRANSFORMERS_OFFLINE=1` settings disable automatic downloads
 - The model is lazy-loaded and auto-unloaded after 15 minutes of inactivity
 
+### Share one broker across coding agents
+
+Start one local service, using the same installed environment as your agents:
+
+```sh
+CONTEXT_BROKER_AUTO_LOAD_ENV=0 context-broker serve
+```
+
+Configure each agent's stdio MCP entry to run:
+
+```sh
+context-broker connect --project-root /absolute/path/to/project
+```
+
+This works through the standard MCP stdio interface used by coding agents; each
+agent still uses its own MCP configuration format. It does not require provider
+API keys. Configure model/storage/backend settings on the service process. Start
+it once before connecting agents, and stop it explicitly when finished; `connect`
+does not auto-start a daemon. The service listens only on `127.0.0.1:8771` (change
+with `serve --port`). All clients must run as the same OS user. A private service
+descriptor in `~/.cache/context-broker/service` holds its random bearer token;
+`CONTEXT_BROKER_SHARED_RUNTIME_DIR` selects another private runtime directory.
+
+Each connection binds one canonical project root. Requests cannot override that
+root, and resources use the connection's project rather than the service's CWD.
+Chat/session identifiers remain scoped by project. In shared mode, global JSON
+storage names include a project-path digest so equally named folders cannot
+collide; existing in-project saves remain available. Legacy name-only global saves
+are not automatically migrated into shared mode.
+
+The service owns one lazy embedding model and a single LRU cache pool for project
+indexes, query metadata, and token reports. `CONTEXT_BROKER_MEMORY_POOL_MB` defaults
+to 256; this bounds estimated retained cache payloads, **not total RSS, the model,
+or in-flight work**. Oversized indexes can be used without retention. Queries keep
+at most `CONTEXT_BROKER_QUERY_CACHE_MAX_ENTRIES` entries per project (default 128),
+and disk query-cache loading/writing is limited by
+`CONTEXT_BROKER_QUERY_CACHE_MAX_FILE_BYTES` (default 4000000). Disk embedding caches
+use read-only memory maps; indexing encodes one batch at a time and search scores
+vectors in chunks. `get_memory_usage` reports aggregate pool counts and the shared
+PID without exposing another project's content.
+
+Disabling an agent's MCP connection ends its proxy; other sessions and the shared
+service continue. Agents still need to send their requests through MCP: installing
+an MCP server cannot intercept every provider prompt or change an editor's plugin
+enabled setting. Native host/plugin toggle hooks are not implemented here.
+
+Verification uses standard MCP clients and a real stdio subprocess. Native Codex,
+Claude Code, Cline, VS Code, DeepSeek, and Hermes applications were not launched in
+the test environment. A Linux startup-only measurement using the same interpreter
+showed 846224 KiB peak RSS for the old eager package import and 79044 KiB for proxy
+construction, before model loading; this is not a production workload benchmark.
+
+### Codex, Hermes, Cursor, and Claude Code configuration
+
+Generate a configuration fragment using the installed broker interpreter:
+
+```sh
+context-broker integration-config --host codex --project-root /absolute/project
+context-broker integration-config --host hermes --project-root /absolute/project
+context-broker integration-config --host cursor --project-root /absolute/project
+context-broker integration-config --host claude-code --project-root /absolute/project
+```
+
+Merge the fragment into the corresponding host settings; do not overwrite existing
+entries. Start `context-broker serve` first. Each fragment launches a lightweight
+project-bound proxy using the absolute Python interpreter path. The optional
+`--runtime-dir` must match the service's `CONTEXT_BROKER_SHARED_RUNTIME_DIR`.
+
+| Host | Configuration | Delegation settings |
+| --- | --- | --- |
+| [Codex](https://developers.openai.com/codex/mcp/) | `.codex/config.toml`, `mcp_servers` | 600-second tool timeout; allow interactive MCP elicitation in host approvals |
+| [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | `~/.hermes/config.yaml`, `mcp_servers` | JSON fragment is valid YAML; 600-second tool timeout, form elicitation enabled |
+| [Cursor](https://cursor.com/docs/mcp) | `.cursor/mcp.json`, `mcpServers` | Uses the host's interactive elicitation and timeout behavior |
+| [Claude Code](https://code.claude.com/docs/en/mcp) | `.mcp.json`, `mcpServers` | 600000-millisecond per-server timeout on versions supporting that setting |
+
+Keep elicitation interactive: host hooks that automatically approve prompts defeat
+the intended human choice. If elicitation is unavailable, no workers launch. Shared
+HTTP uses stateful sessions to forward the question through the stdio proxy. One
+service still owns the model/cache pool; session protocol state remains separate.
+
+Tests cover configuration parsing, real stdio/HTTP consent forwarding, failure
+propagation, shared-process identity, and project isolation. The user reports successful laptop use with Codex, Hermes, and Claude Code.
+Those applications are not installed in this test environment, so that report is
+separate from automated verification of this branch. Cursor native compatibility
+remains unverified. Host versions,
+approval policies, output limits, and plugin controls still require native checks.
+
+### Relevant issue history without session bloat
+
+At setup, call `configure_history_indexing`. It asks the user **Index / No index**
+through MCP elicitation and saves the choice per project. Indexing is off until an
+explicit choice enables it. No index still reads saved history directly; disabling
+indexing removes only the derived SQLite index, never original chats or handoffs.
+
+`lookup_project_history(query)` checks the project's local chat ledgers and model
+handoffs for the current issue. Question-bearing routing/search MCP calls also check
+history automatically and append at most three relevant excerpts. Initialization,
+tool discovery, and unrelated questions do not preload project memory. Complete
+model handoffs remain an explicit continuation operation.
+
+Similarity uses conservative keyword overlap: at least two meaningful terms and
+60% query-term coverage. This detects repeated and lexically similar issues; it is
+not universal semantic matching. Excerpts preserve prior failure reasons and remain
+evidence to verify against current code. No provider calls or embedding model loads
+are required. History remains excluded from the normal source-code index.
+
+Indexed mode reuses parsed excerpts and normalized search terms from unchanged
+files; it checks source metadata on every lookup and refreshes changed records.
+No-index mode reads source JSON directly on every lookup. Both scan at most 128
+recent candidate files (bounded directory enumeration), 1 MB per file, and 2000
+records per lookup. Each returned excerpt is at most 2000 characters. Oversized or
+unreadable history produces `partial: true`; never interpret this as an exhaustive
+search. Secret-bearing excerpts are excluded. Records from other projects are never
+retrieved. These checks apply to requests reaching MCP; a standalone MCP server
+cannot intercept questions that a host does not send to it.
+
+A standalone multi-provider/channel harness is feasible; see
+[the implementation assessment](docs/harness-feasibility.md) for Cursor ACP,
+Telegram, Discord, Teams, provider boundaries, and remaining work.
+
+### Share memory when switching models
+
+`save_model_handoff` saves an immutable checkpoint; `load_model_handoff` restores
+it for any target model in the same project. Neither requires Redis, Honcho, or a
+provider API. Supply the source model, session ID, relevant files, and this state:
+
+```json
+{
+  "goal": "Original user request",
+  "messages": [{"role": "user", "content": "Exact conversation text"}],
+  "decisions": ["Keep the existing public API"],
+  "constraints": ["Use the user-selected model and reasoning level"],
+  "facts": [],
+  "tasks": [{"task": "Native verification", "status": "failed", "failure_reason": "Host unavailable"}],
+  "acceptance_criteria": ["Regression tests pass"],
+  "open_questions": []
+}
+```
+
+Pass the returned `handoff_id` to the next model. It must load that checkpoint
+before continuing. Exact supplied messages, decisions, failures, and file contents
+are retained; no automatic summary replaces them. Failed tasks require reasons;
+completed tasks require evidence. Evidence is caller-supplied and still needs review.
+Changed files, corruption, missing checkpoints, or insufficient context budget return
+`failed`. Saved memory stays intact for recovery. These tools cannot recover unsaved
+host history, transfer private model reasoning, or guarantee equal model quality.
+
+Checkpoints live once under `CONTEXT_BROKER_STORAGE_DIR/handoffs/<project-digest>/`,
+independently of model, session, and the generic storage mode. Identical saves reuse
+the same content-hash ID; updated checkpoints preserve previous versions. No model-
+specific in-memory cache is added. Atomic writes and file locks protect concurrent
+saves. Storage is durable and grows with distinct checkpoints; old memory is never
+automatically evicted. Each checkpoint is limited to 256 KB, with selected source
+files sharing the existing 64 KB snapshot limit. Load defaults to a 32 KB byte budget;
+choose a budget fitting the target host/model and resolve a failed load before work
+continues. No provider call or model switch happens automatically.
+
+### Optional multi-agent delegation for large tasks
+
+`delegate_large_task` runs 2–4 independent proposal workers concurrently, then one
+integration reviewer, using the **exact user-specified model ID** for every call.
+The host supplies the original task, conversation decisions, constraints, acceptance
+criteria, project root, and selected files. Each worker receives the same immutable
+context snapshot plus its assignment. The tool asks the user **Split task / Keep one
+agent** before any provider calls. Decline, cancellation, timeout, or unavailable MCP
+elicitation launches no workers; the host continues with one agent. There is no
+confirmation boolean that can bypass the user prompt.
+
+Configure `CONTEXT_BROKER_LLM_BASE_URL` (an OpenAI-compatible API base ending in `/v1`)
+and, if required, `CONTEXT_BROKER_LLM_API_KEY` on the broker service. Local HTTP is
+limited to loopback; remote endpoints require HTTPS. The provider must support
+`/chat/completions` JSON responses and return the requested exact model ID; use a
+versioned model ID if an alias resolves to a different name. Authentication stays in
+the service environment. Provider calls can incur charges; the confirmation states
+the assignments, selected model, context sharing, and maximum number of calls.
+
+This adapter creates model-backed proposal/review workers, not native editor agent
+subprocesses. It does not borrow subscription sessions or silently select another
+model/provider. It sends complete caller-supplied context and selected project files;
+it cannot discover conversation history the host has not provided. The 64 KB shared
+snapshot limit is enforced by rejection, never silent truncation. Files outside the
+project, secret files/content, oversized responses, incomplete provider responses,
+and model mismatches are rejected. Files are checked again after consent and review.
+
+Workers have no command execution or file-writing tools. They return proposed changes,
+evidence, and risks. The reviewer must cover every acceptance criterion and report
+conflicts, missing context, and a verification plan. Passing that review yields
+`ready_for_integration`, **not completed work**: the host must integrate proposals
+and run tests. Failed batches preserve successful proposal handoffs, cancel unfinished siblings,
+and never automatically retry paid calls. One batch at a time per server bounds
+concurrency and avoids an unbounded task queue. Model review cannot guarantee quality;
+actual code verification remains required.
+
+Failures return `status: "failed"`, `failure_code`, `failure_reason`, and
+`completed: false`, with the MCP `isError` flag set. This includes invalid input,
+provider errors, declared worker failures, changed context, confirmation timeouts,
+and rejected or incomplete reviews. A worker cannot label a failed assignment as a
+successful proposal. Provider HTTP failures expose the status code, not response
+bodies or credentials. Validation failures omit rejected input values.
+
+### Disconnect behavior
+
+On Linux, closing the editor's stdio MCP connection terminates the broker even when
+the editor remains open or a synchronous operation is still running. The watchdog
+observes pipe hangup without reading protocol messages. Network transports remain
+available to other clients when one client disconnects.
+
+Editor plugin enable/disable settings belong to the editor. This repository does
+not contain an editor plugin or a hook that synchronizes those settings; stopping
+the broker process does not change an editor's plugin toggle.
+
 ### Using a Different Embedding Model
 
 Any model compatible with the `sentence-transformers` library works. Popular alternatives:
@@ -391,6 +602,7 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES` | Exit automatically when the launching editor/AI process disappears | `1` (enabled) |
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
+| `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES` | Maximum in-memory routing plans (`0` disables plan caching) | `128` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
 | `CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS` | Follow dir/file symlinks while collecting files (`0` avoids `/nix/store` via `result`) | `0` |
 | `CONTEXT_BROKER_INDEX_MAX_FILE_BYTES` | Skip files larger than N bytes during collection (`0` disables) | `2000000` |

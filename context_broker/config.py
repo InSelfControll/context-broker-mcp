@@ -176,6 +176,13 @@ user configuration. They provide a safety net against accidental secret leakage.
 """
 
 SECRET_ENV_KEY_PATTERNS: set[str] = {
+    # Private-key headers also protect pasted context and renamed key files.
+    "-----BEGIN PRIVATE KEY-----",
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+    "-----BEGIN RSA PRIVATE KEY-----",
+    "-----BEGIN EC PRIVATE KEY-----",
+    "-----BEGIN DSA PRIVATE KEY-----",
+    "-----BEGIN OPENSSH PRIVATE KEY-----",
     "PRIVATE_KEY",
     "SECRET_KEY",
     "API_KEY",
@@ -444,6 +451,19 @@ IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS: float = max(
     _get_env_float("CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS", 30.0),
 )
 """How often to check whether idle resources should be released."""
+
+ROUTER_PLAN_CACHE_MAX_ENTRIES: int = max(
+    0, _get_env_int("CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES", 128)
+)
+"""Maximum cached routing plans per process; zero disables plan caching."""
+
+MEMORY_POOL_BYTES = max(0, _get_env_int("CONTEXT_BROKER_MEMORY_POOL_MB", 256)) * 1024 * 1024
+"""Shared budget for cached project indexes, query results, and token reports."""
+QUERY_CACHE_MAX_ENTRIES = max(0, _get_env_int("CONTEXT_BROKER_QUERY_CACHE_MAX_ENTRIES", 128))
+QUERY_CACHE_MAX_FILE_BYTES = max(0, _get_env_int("CONTEXT_BROKER_QUERY_CACHE_MAX_FILE_BYTES", 4_000_000))
+SHARED_RUNTIME_DIR = os.environ.get(
+    "CONTEXT_BROKER_SHARED_RUNTIME_DIR", os.path.expanduser("~/.cache/context-broker/service")
+)
 
 
 # =============================================================================

@@ -53,6 +53,10 @@ _SECRET_VALUE_RE = re.compile(
     r"(gh[pousr]_[a-z0-9_]{8,})|"
     r"((api[_-]?key|token|secret|password)\s*[:=]\s*)\S+"
 )
+_SECRET_KEY_RE = re.compile(
+    r"(?i)(?:^|[_-])(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|"
+    r"private[_-]?key|authorization|credential)s?$"
+)
 
 
 def _flatten_values(payload: Any) -> list[str]:
@@ -79,7 +83,10 @@ def _looks_like_path(key: str, value: str) -> bool:
 def redact_secrets(value: Any) -> Any:
     """Redact secret-like strings recursively before returning tool outputs."""
     if isinstance(value, dict):
-        return {key: redact_secrets(item) for key, item in value.items()}
+        return {
+            key: "[REDACTED]" if _SECRET_KEY_RE.search(str(key)) else redact_secrets(item)
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         return [redact_secrets(item) for item in value]
     if isinstance(value, tuple):

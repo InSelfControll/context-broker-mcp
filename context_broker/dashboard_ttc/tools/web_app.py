@@ -50,7 +50,7 @@ def _backend_banner() -> dict[str, Any]:
     return {"backend": data_tasks.active_backend()}
 
 
-async def index(_: Request) -> _HTMLResponse:
+def index(_: Request) -> _HTMLResponse:
     """Render the project list."""
     try:
         projects = data_tasks.list_projects()
@@ -59,7 +59,7 @@ async def index(_: Request) -> _HTMLResponse:
     return HTMLResponse(render_projects_page(projects, backend=data_tasks.active_backend()))
 
 
-async def project_page(request: Request) -> _HTMLResponse:
+def project_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     try:
         sessions = data_tasks.list_sessions(digest)
@@ -68,7 +68,7 @@ async def project_page(request: Request) -> _HTMLResponse:
     return HTMLResponse(render_project_page(digest, sessions, backend=data_tasks.active_backend()))
 
 
-async def session_page(request: Request) -> _HTMLResponse:
+def session_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     session_id = request.path_params["session_id"]
     try:
@@ -78,7 +78,7 @@ async def session_page(request: Request) -> _HTMLResponse:
     return HTMLResponse(render_messages_page(session, backend=data_tasks.active_backend()))
 
 
-async def users_page(request: Request) -> _HTMLResponse:
+def users_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     try:
         users = data_tasks.list_users(digest)
@@ -89,7 +89,7 @@ async def users_page(request: Request) -> _HTMLResponse:
     )
 
 
-async def user_activity_page(request: Request) -> _HTMLResponse:
+def user_activity_page(request: Request) -> _HTMLResponse:
     digest = request.path_params["digest"]
     peer_id = request.path_params["peer_id"]
     try:
@@ -105,14 +105,14 @@ async def api_status(_: Request) -> _JSONResponse:
     return JSONResponse(_backend_banner())
 
 
-async def api_projects(_: Request) -> _JSONResponse:
+def api_projects(_: Request) -> _JSONResponse:
     try:
         return JSONResponse({"projects": data_tasks.list_projects(), **_backend_banner()})
     except data_tasks.DashboardError as e:
         return _json_error(e)
 
 
-async def api_sessions(request: Request) -> _JSONResponse:
+def api_sessions(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     try:
         return JSONResponse(
@@ -122,7 +122,7 @@ async def api_sessions(request: Request) -> _JSONResponse:
         return _json_error(e)
 
 
-async def api_session(request: Request) -> _JSONResponse:
+def api_session(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     session_id = request.path_params["session_id"]
     try:
@@ -131,7 +131,7 @@ async def api_session(request: Request) -> _JSONResponse:
         return _json_error(e)
 
 
-async def api_users(request: Request) -> _JSONResponse:
+def api_users(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     try:
         return JSONResponse(
@@ -141,7 +141,7 @@ async def api_users(request: Request) -> _JSONResponse:
         return _json_error(e)
 
 
-async def api_user_activity(request: Request) -> _JSONResponse:
+def api_user_activity(request: Request) -> _JSONResponse:
     digest = request.path_params["digest"]
     peer_id = request.path_params["peer_id"]
     try:

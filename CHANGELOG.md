@@ -6,9 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] — 2026-07-23
+## [Unreleased] — 2026-09-05
+
+### Added
+
+- Add explicit Index / No index choice for project history; both modes retrieve only issue-relevant excerpts, with bounded scans and no automatic full-memory preload.
+- Check local issue history automatically on question-bearing routing/search calls and document the standalone provider/Cursor/messaging harness design.
+
+- Add immutable cross-model project handoffs preserving exact supplied memory, task failures, decisions, evidence, and file snapshots; reject stale, corrupt, secret-bearing, or oversized context without silent truncation.
+
+- Generate project-bound MCP configuration fragments for Codex, Hermes, Cursor, and Claude Code with native configuration keys and timeout units.
+
+- Add consent-gated `delegate_large_task`: 2–4 parallel model-pinned proposal workers, shared project context, and an acceptance-criteria integration review; no workers start if the user declines or elicitation is unavailable.
+- Bound delegation inputs, outputs, concurrency, and provider timeouts; reject model substitution, stale context, and incomplete handoffs without silently truncating context or applying unverified changes.
+
+- Add opt-in authenticated local `serve` / project-bound stdio `connect` commands so coding agents can share one model and memory pool across sessions.
+- Add aggregate shared-process cache diagnostics through `get_memory_usage`.
+
+### Changed
+
+- Bound retained index/query/report caches in one LRU pool; lazy-load ML imports and serialize model initialization and inference.
+- Stream index encoding in batches, memory-map cached vectors, compute cosine similarity in chunks, and invalidate indexes on corpus changes.
+- Move blocking search, storage, routing, and context operations into bounded workers with request-local project identity.
+- Separate global storage for equally named projects in shared mode; preserve existing standalone storage paths.
 
 ### Fixed
+
+- Return explicit failed task records with reasons and MCP error flags; reject agent-declared failures and failed integration reviews while retaining successful handoffs.
+- Use stateful shared MCP sessions so interactive task-splitting consent reaches stdio clients instead of timing out.
+
+- Evaluate ignored directories relative to the project, so projects located under `tmp` or `temp` remain searchable.
+- Lock disk index cache operations and keep the build fingerprint when publishing cached vectors.
+
+- Stop a busy Linux stdio broker when its client closes the MCP pipe, even if the editor stays open.
+- Keep downstream MCP sessions in a dedicated owner task so SDK cancellation scopes close correctly; reuse ready connections, clear stale discovery, validate retry limits, and enforce operation timeouts without replaying tool calls.
+- Honor advertised downstream capabilities and collect all discovery pages; remove tools deleted by downstream servers from registry caches.
+- Cancel idle WebSocket transport workers on exit and move blocking dashboard backend reads off the ASGI event loop.
+- Reject storage path traversal and symlink escapes; preserve previous JSON saves when serialization fails and list global fallback saves in in-project mode.
+- Lock chat ledger read/append/write operations across processes, use unique atomic temporary files, and refuse to overwrite corrupt ledgers.
+- Scan all returned source content for secret signatures and redact sensitive dictionary values by key.
+- Enforce router token and tool limits, isolate cached responses from caller mutation, and bound plan cache growth with `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES`.
+- Close registry SQLite and Redis clients and bound optional Redis connection/read waits.
+- Update the Transformers dependency chain to address CVE-2026-9856; share JSON persistence and context identifier helpers across consumers.
 
 - 🐛 **search_context / indexing timeouts**: stop recursive `glob` walks that followed project `result` → `/nix/store` (and other symlink escapes), which routinely exceeded the client 300s MCP tool budget on Nix/HM trees. File collection now uses a single `os.walk` that prunes ignored dirs up front and refuses symlink descent by default (`CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS=0`).
 - 🐛 allow MCP harnesses to disable automatic `.env` loading

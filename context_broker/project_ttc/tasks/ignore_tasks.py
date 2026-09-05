@@ -50,7 +50,7 @@ def should_ignore(path: str, rel_path: str, patterns: list[str], ignore_dirs: se
     if matches_ignored_file_pattern(rel_path):
         return True
 
-    for part in Path(path).parts:
+    for part in Path(rel_path).parts:
         if part in ignore_dirs:
             return True
 
