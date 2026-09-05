@@ -129,15 +129,30 @@ def main() -> None:
     serve.add_argument("--port", type=int, default=8771)
     connect = commands.add_parser("connect", help="Connect an agent to a project's shared service")
     connect.add_argument("--project-root", required=True)
-    config = commands.add_parser("integration-config", help="Print native coding-agent MCP config")
+    config = commands.add_parser("integration-config", help="Install Context Broker into native coding-agent config")
     config.add_argument("--host", required=True, choices=HOSTS)
     config.add_argument("--project-root", required=True)
     config.add_argument("--runtime-dir", default="")
+    config.add_argument("--config-path", default="", help="Override destination (for profiles)")
+    config.add_argument("--print", dest="print_only", action="store_true", help="Print config without writing")
     args = parser.parse_args()
     if args.command == "integration-config":
         from context_broker.integrations_ttc.tools.config_tools import client_config
 
-        sys.stdout.write(client_config(args.host, args.project_root, runtime_dir=args.runtime_dir))
+        if args.print_only:
+            sys.stdout.write(client_config(args.host, args.project_root, runtime_dir=args.runtime_dir))
+        else:
+            from context_broker.integrations_ttc.tools.install_tools import install_config
+            try:
+                result = install_config(args.host, args.project_root, runtime_dir=args.runtime_dir,
+                                        config_path=args.config_path)
+            except Exception as exc:
+                config.exit(1, f"Configuration update failed ({type(exc).__name__}); "
+                            "check the destination's format and permissions.\n")
+            sys.stdout.write(f"{result['status']}: {result['config_path']}\n")
+            if result.get("backup_path"):
+                sys.stdout.write(f"Backup: {result['backup_path']}\n")
+            sys.stdout.write("Start context-broker serve if needed, then restart your agent.\n")
     elif args.command == "serve":
         if not 0 < args.port < 65536:
             serve.error("port must be between 1 and 65535")

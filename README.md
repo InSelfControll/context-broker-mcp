@@ -74,7 +74,7 @@ construction, before model loading; this is not a production workload benchmark.
 
 ### Codex, Hermes, Cursor, and Claude Code configuration
 
-Generate a configuration fragment using the installed broker interpreter:
+Install project-bound configuration using the installed broker interpreter:
 
 ```sh
 context-broker integration-config --host codex --project-root /absolute/project
@@ -84,8 +84,11 @@ context-broker integration-config --host cursor --project-root /absolute/project
 context-broker integration-config --host claude-code --project-root /absolute/project
 ```
 
-Merge the fragment into the corresponding host settings; do not overwrite existing
-entries. Start `context-broker serve` first. Each fragment launches a lightweight
+The command merges into existing settings and saves a `.context-broker.bak` backup.
+Relayhelm also gets its plugin enabled with the same project binding. Use `--print`
+for preview only, or `--config-path /path/to/config` for a custom profile. TOML/YAML
+comments are preserved; JSONC is normalized to JSON (the backup retains comments).
+Start `context-broker serve` first. Each connection launches a lightweight
 project-bound proxy using the absolute Python interpreter path. The optional
 `--runtime-dir` must match the service's `CONTEXT_BROKER_SHARED_RUNTIME_DIR`.
 

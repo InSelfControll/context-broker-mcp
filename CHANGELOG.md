@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Install integration config automatically with locked atomic merges, backups, preview and custom destinations; configure Relayhelm plugin and project binding together.
+
 - Support Relayhelm as a native integration host with its own config destination and shared project-bound MCP transport.
 
 - Add explicit Index / No index choice for project history; both modes retrieve only issue-relevant excerpts, with bounded scans and no automatic full-memory preload.
