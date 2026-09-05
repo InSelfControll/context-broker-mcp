@@ -41,12 +41,12 @@ def client_config(
             "[mcp_servers.context-broker]\n"
             f"command = {json.dumps(executable)}\n"
             f'args = {json.dumps(entry["args"])}\n'
-            "startup_timeout_sec = 30\ntool_timeout_sec = 600\n"
+            "startup_timeout_sec = 90\ntool_timeout_sec = 600\n"
             "[mcp_servers.context-broker.env]\n"
             + "".join(f"{key} = {json.dumps(value)}\n" for key, value in env.items())
         )
     if host in {"hermes", "relayhelm"}:
-        entry.update(timeout=600, connect_timeout=30, elicitation={"enabled": True, "timeout": 300})
+        entry.update(timeout=600, connect_timeout=90, elicitation={"enabled": True, "timeout": 300})
         return json.dumps({"mcp_servers": {"context-broker": entry}}, indent=2) + "\n"
     if host == "claude-code":
         entry.update(type="stdio", timeout=600000)
