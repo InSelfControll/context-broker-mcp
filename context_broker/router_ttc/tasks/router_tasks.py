@@ -8,6 +8,7 @@ from threading import Lock
 from time import perf_counter
 from typing import Any, Callable
 
+from context_broker.delegation_ttc.tools.policy_tools import delegation_offer
 from context_broker.config import ROUTER_PLAN_CACHE_MAX_ENTRIES
 from context_broker.indexer import literal_search, search_codebase
 from context_broker.project import resolve_project_root
@@ -179,6 +180,7 @@ def route_task(
         "mode": mode,
         "intent": detect_intent(task),
         "decomposition": decompose_task(task),
+        "delegation_offer": delegation_offer(task),
         "selected_tools": [descriptor.to_public_dict() for descriptor in selected],
         "exposure_set": {
             "version": "ucr.exposure_set.v1",

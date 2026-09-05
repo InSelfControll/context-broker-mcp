@@ -72,6 +72,42 @@ the test environment. A Linux startup-only measurement using the same interprete
 showed 846224 KiB peak RSS for the old eager package import and 79044 KiB for proxy
 construction, before model loading; this is not a production workload benchmark.
 
+### Optional multi-agent delegation for large tasks
+
+`delegate_large_task` runs 2–4 independent proposal workers concurrently, then one
+integration reviewer, using the **exact user-specified model ID** for every call.
+The host supplies the original task, conversation decisions, constraints, acceptance
+criteria, project root, and selected files. Each worker receives the same immutable
+context snapshot plus its assignment. The tool asks the user **Split task / Keep one
+agent** before any provider calls. Decline, cancellation, timeout, or unavailable MCP
+elicitation launches no workers; the host continues with one agent. There is no
+confirmation boolean that can bypass the user prompt.
+
+Configure `CONTEXT_BROKER_LLM_BASE_URL` (an OpenAI-compatible API base ending in `/v1`)
+and, if required, `CONTEXT_BROKER_LLM_API_KEY` on the broker service. Local HTTP is
+limited to loopback; remote endpoints require HTTPS. The provider must support
+`/chat/completions` JSON responses and return the requested exact model ID; use a
+versioned model ID if an alias resolves to a different name. Authentication stays in
+the service environment. Provider calls can incur charges; the confirmation states
+the assignments, selected model, context sharing, and maximum number of calls.
+
+This adapter creates model-backed proposal/review workers, not native editor agent
+subprocesses. It does not borrow subscription sessions or silently select another
+model/provider. It sends complete caller-supplied context and selected project files;
+it cannot discover conversation history the host has not provided. The 64 KB shared
+snapshot limit is enforced by rejection, never silent truncation. Files outside the
+project, secret files/content, oversized responses, incomplete provider responses,
+and model mismatches are rejected. Files are checked again after consent and review.
+
+Workers have no command execution or file-writing tools. They return proposed changes,
+evidence, and risks. The reviewer must cover every acceptance criterion and report
+conflicts, missing context, and a verification plan. Passing that review yields
+`ready_for_integration`, **not completed work**: the host must integrate proposals
+and run tests. Failed batches preserve completed handoffs, cancel unfinished siblings,
+and never automatically retry paid calls. One batch at a time per server bounds
+concurrency and avoids an unbounded task queue. Model review cannot guarantee quality;
+actual code verification remains required.
+
 ### Disconnect behavior
 
 On Linux, closing the editor's stdio MCP connection terminates the broker even when

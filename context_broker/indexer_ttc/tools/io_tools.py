@@ -14,7 +14,9 @@ from context_broker.security_ttc.tools import (
 from context_broker.utils import log
 
 
-def read_file_content(filepath: str, max_chars: int = 3000) -> Optional[str]:
+def read_file_content(
+    filepath: str, max_chars: int = 3000, *, strict_encoding: bool = False
+) -> Optional[str]:
     """Read file content safely with encoding handling.
 
     SECURITY NOTE: This function performs content-based secret detection.
@@ -28,7 +30,9 @@ def read_file_content(filepath: str, max_chars: int = 3000) -> Optional[str]:
         if blocked:
             audit_log_secret_block(filepath, reason, operation="read")
             return None
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(
+            filepath, "r", encoding="utf-8", errors="strict" if strict_encoding else "ignore"
+        ) as f:
             content = f.read(max_chars)
     except Exception:
         return None
