@@ -107,6 +107,39 @@ separate from automated verification of this branch. Cursor native compatibility
 remains unverified. Host versions,
 approval policies, output limits, and plugin controls still require native checks.
 
+### Relevant issue history without session bloat
+
+At setup, call `configure_history_indexing`. It asks the user **Index / No index**
+through MCP elicitation and saves the choice per project. Indexing is off until an
+explicit choice enables it. No index still reads saved history directly; disabling
+indexing removes only the derived SQLite index, never original chats or handoffs.
+
+`lookup_project_history(query)` checks the project's local chat ledgers and model
+handoffs for the current issue. Question-bearing routing/search MCP calls also check
+history automatically and append at most three relevant excerpts. Initialization,
+tool discovery, and unrelated questions do not preload project memory. Complete
+model handoffs remain an explicit continuation operation.
+
+Similarity uses conservative keyword overlap: at least two meaningful terms and
+60% query-term coverage. This detects repeated and lexically similar issues; it is
+not universal semantic matching. Excerpts preserve prior failure reasons and remain
+evidence to verify against current code. No provider calls or embedding model loads
+are required. History remains excluded from the normal source-code index.
+
+Indexed mode reuses parsed excerpts and normalized search terms from unchanged
+files; it checks source metadata on every lookup and refreshes changed records.
+No-index mode reads source JSON directly on every lookup. Both scan at most 128
+recent candidate files (bounded directory enumeration), 1 MB per file, and 2000
+records per lookup. Each returned excerpt is at most 2000 characters. Oversized or
+unreadable history produces `partial: true`; never interpret this as an exhaustive
+search. Secret-bearing excerpts are excluded. Records from other projects are never
+retrieved. These checks apply to requests reaching MCP; a standalone MCP server
+cannot intercept questions that a host does not send to it.
+
+A standalone multi-provider/channel harness is feasible; see
+[the implementation assessment](docs/harness-feasibility.md) for Cursor ACP,
+Telegram, Discord, Teams, provider boundaries, and remaining work.
+
 ### Share memory when switching models
 
 `save_model_handoff` saves an immutable checkpoint; `load_model_handoff` restores

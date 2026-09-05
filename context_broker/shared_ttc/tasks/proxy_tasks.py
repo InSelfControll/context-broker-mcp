@@ -25,6 +25,8 @@ class PreserveTaskFailures(Middleware):
                 "delegate_large_task",
                 "save_model_handoff",
                 "load_model_handoff",
+            "lookup_project_history",
+            "configure_history_indexing",
             }:
                 raise
             try:
