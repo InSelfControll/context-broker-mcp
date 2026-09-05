@@ -11,13 +11,16 @@ regardless of which cross-chat context backend (`honcho` or `redis`) is selected
 
 import hashlib
 import json
-import os
 from typing import Any
 
 from context_broker.config import (
     CHAT_CACHE_TTL_SECONDS,
     REDIS_KEY_PREFIX,
     REDIS_URL,
+)
+from context_broker.context_ttc.tools.identity_tools import (
+    normalize_identifier as _safe_id,
+    project_digest as _project_digest,
 )
 
 _REDIS_CLIENT: Any = None
@@ -57,16 +60,6 @@ def _get_client() -> Any:
     except Exception:
         _REDIS_UNAVAILABLE = True
         return None
-
-
-def _project_digest(project_root: str) -> str:
-    root = os.path.abspath(project_root or os.getcwd())
-    return hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
-
-
-def _safe_id(session_id: str) -> str:
-    candidate = (session_id or "default").strip() or "default"
-    return "".join(c if c.isalnum() or c in {"-", "_", "."} else "-" for c in candidate)
 
 
 def _signature(**kwargs: Any) -> str:

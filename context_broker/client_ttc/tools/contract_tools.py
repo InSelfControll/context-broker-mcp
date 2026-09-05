@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+import math
 from typing import Any
 
 
@@ -43,16 +44,26 @@ class DownstreamServerConfig:
 
     def validate(self) -> None:
         """Validate transport-specific config without opening a connection."""
+        if self.transport not in set(DownstreamTransport):
+            raise ValueError(f"unsupported downstream transport: {self.transport}")
+        for name in ("timeout_seconds", "heartbeat_interval_seconds"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if not isinstance(self.reconnect_attempts, int) or self.reconnect_attempts < 0:
+            raise ValueError("reconnect_attempts must be a non-negative integer")
+        if not math.isfinite(self.reconnect_backoff_seconds) or self.reconnect_backoff_seconds < 0:
+            raise ValueError("reconnect_backoff_seconds must be finite and non-negative")
         if not self.name.strip():
             raise ValueError("downstream server name is required")
         if self.transport == DownstreamTransport.STDIO and not self.command:
             raise ValueError("stdio downstream server requires command")
         if self.transport in {DownstreamTransport.HTTP, DownstreamTransport.SSE} and not self.url:
-            raise ValueError(f"{self.transport.value} downstream server requires url")
+            raise ValueError(f"{self.transport} downstream server requires url")
         if self.transport == DownstreamTransport.STDIO and self.url:
             raise ValueError("stdio downstream server must not set url")
         if self.transport in {DownstreamTransport.HTTP, DownstreamTransport.SSE} and self.command:
-            raise ValueError(f"{self.transport.value} downstream server must not set command")
+            raise ValueError(f"{self.transport} downstream server must not set command")
 
 
 @dataclass(frozen=True)

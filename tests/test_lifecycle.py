@@ -2,6 +2,46 @@ from context_broker import lifecycle
 from context_broker.indexer_ttc.tools import state
 
 
+def test_stdio_disconnect_exits_while_editor_parent_remains_alive() -> None:
+    """Closing the host pipe must stop even a broker busy outside its event loop."""
+    import os
+    import select
+    import subprocess
+    import sys
+
+    import pytest
+
+    if not sys.platform.startswith("linux"):
+        pytest.skip("Linux pipe-hangup watchdog")
+    code = (
+        "from context_broker.lifecycle import start_lifecycle_watchdogs; "
+        "import time; start_lifecycle_watchdogs(); "
+        "print('ready', flush=True); time.sleep(60)"
+    )
+    env = dict(
+        os.environ, CONTEXT_BROKER_TRANSPORT="stdio", CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES="0"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-c", code],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+    )
+    try:
+        assert select.select([process.stdout], [], [], 20)[0], "broker did not initialize"
+        assert process.stdout.readline() == b"ready\n"
+        assert process.poll() is None
+        process.stdin.close()
+        process.wait(timeout=5)
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+        process.stdout.close()
+        process.stderr.close()
+
+
 def test_release_expensive_resources_clears_in_memory_state() -> None:
     state.INDEXES["demo"] = {"paths": ["a.py"]}
     state.QUERY_CACHE["demo"] = {"query": "auth"}

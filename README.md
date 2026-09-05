@@ -20,6 +20,17 @@ Context Broker uses **one local ML model** — an embedding model, not a chat/LL
 - Explicit `HF_HUB_OFFLINE=1` or `TRANSFORMERS_OFFLINE=1` settings disable automatic downloads
 - The model is lazy-loaded and auto-unloaded after 15 minutes of inactivity
 
+### Disconnect behavior
+
+On Linux, closing the editor's stdio MCP connection terminates the broker even when
+the editor remains open or a synchronous operation is still running. The watchdog
+observes pipe hangup without reading protocol messages. Network transports remain
+available to other clients when one client disconnects.
+
+Editor plugin enable/disable settings belong to the editor. This repository does
+not contain an editor plugin or a hook that synchronizes those settings; stopping
+the broker process does not change an editor's plugin toggle.
+
 ### Using a Different Embedding Model
 
 Any model compatible with the `sentence-transformers` library works. Popular alternatives:
@@ -391,6 +402,7 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES` | Exit automatically when the launching editor/AI process disappears | `1` (enabled) |
 | `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
+| `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES` | Maximum in-memory routing plans (`0` disables plan caching) | `128` |
 | `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
 | `CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS` | Follow dir/file symlinks while collecting files (`0` avoids `/nix/store` via `result`) | `0` |
 | `CONTEXT_BROKER_INDEX_MAX_FILE_BYTES` | Skip files larger than N bytes during collection (`0` disables) | `2000000` |

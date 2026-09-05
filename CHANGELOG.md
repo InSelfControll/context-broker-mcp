@@ -6,9 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] — 2026-07-23
+## [Unreleased] — 2026-09-05
 
 ### Fixed
+
+- Stop a busy Linux stdio broker when its client closes the MCP pipe, even if the editor stays open.
+- Keep downstream MCP sessions in a dedicated owner task so SDK cancellation scopes close correctly; reuse ready connections, clear stale discovery, validate retry limits, and enforce operation timeouts without replaying tool calls.
+- Honor advertised downstream capabilities and collect all discovery pages; remove tools deleted by downstream servers from registry caches.
+- Cancel idle WebSocket transport workers on exit and move blocking dashboard backend reads off the ASGI event loop.
+- Reject storage path traversal and symlink escapes; preserve previous JSON saves when serialization fails and list global fallback saves in in-project mode.
+- Lock chat ledger read/append/write operations across processes, use unique atomic temporary files, and refuse to overwrite corrupt ledgers.
+- Scan all returned source content for secret signatures and redact sensitive dictionary values by key.
+- Enforce router token and tool limits, isolate cached responses from caller mutation, and bound plan cache growth with `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES`.
+- Close registry SQLite and Redis clients and bound optional Redis connection/read waits.
+- Update the Transformers dependency chain to address CVE-2026-9856; share JSON persistence and context identifier helpers across consumers.
 
 - 🐛 **search_context / indexing timeouts**: stop recursive `glob` walks that followed project `result` → `/nix/store` (and other symlink escapes), which routinely exceeded the client 300s MCP tool budget on Nix/HM trees. File collection now uses a single `os.walk` that prunes ignored dirs up front and refuses symlink descent by default (`CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS=0`).
 - 🐛 allow MCP harnesses to disable automatic `.env` loading

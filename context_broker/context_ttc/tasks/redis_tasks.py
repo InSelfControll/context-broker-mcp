@@ -10,9 +10,7 @@ for cross-session context sharing. Schema:
   <prefix>:ctx:project:<digest>:session:<id>  LIST of JSON message payloads
 """
 
-import hashlib
 import json
-import os
 import time
 from typing import Any
 
@@ -24,6 +22,10 @@ from context_broker.config import (
     REDIS_URL,
 )
 from context_broker.context_ttc.tasks import chat_ledger
+from context_broker.context_ttc.tools.identity_tools import (
+    normalize_identifier as _safe_id,
+    project_digest as project_digest,
+)
 from context_broker.identity import resolve_user_peer_id
 from context_broker.project import get_project_name
 
@@ -60,18 +62,6 @@ def reset_client_for_tests(client: Any | None = None) -> None:
     """Test hook: inject or reset the Redis client."""
     global _REDIS_CLIENT
     _REDIS_CLIENT = client
-
-
-def _safe_id(value: str, default: str) -> str:
-    """Normalize identifiers before keying Redis."""
-    candidate = (value or default).strip() or default
-    return "".join(c if c.isalnum() or c in {"-", "_", "."} else "-" for c in candidate)
-
-
-def project_digest(project_root: str) -> str:
-    """Return a stable digest used to scope Redis keys per project."""
-    root = os.path.abspath(project_root or os.getcwd())
-    return hashlib.sha256(root.encode("utf-8")).hexdigest()[:16]
 
 
 def _k(*parts: str) -> str:

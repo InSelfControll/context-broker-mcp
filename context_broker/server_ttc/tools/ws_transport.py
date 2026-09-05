@@ -81,7 +81,12 @@ async def websocket_server(ws: WebSocket):
     async with anyio.create_task_group() as tg:
         tg.start_soon(ws_reader)
         tg.start_soon(ws_writer)
-        yield read_stream, write_stream
+        try:
+            yield read_stream, write_stream
+        finally:
+            tg.cancel_scope.cancel()
+            read_stream.close()
+            write_stream.close()
 
 
 def create_ws_app(server) -> Starlette:

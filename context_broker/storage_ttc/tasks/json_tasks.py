@@ -6,7 +6,12 @@ import json
 from typing import Any, Optional
 
 from context_broker.config import IN_PROJECT_FOLDER, STORAGE_BASE_DIR, STORAGE_MODE, StorageMode
-from context_broker.storage_ttc.tools.path_tools import get_storage_dir, get_storage_dirs
+from context_broker.storage_ttc.tools.json_tools import atomic_write_json
+from context_broker.storage_ttc.tools.path_tools import (
+    contained_path,
+    get_storage_dir,
+    get_storage_dirs,
+)
 from context_broker.utils import log
 
 
@@ -26,12 +31,8 @@ def save_json_data(
 
     def do_save(base_path) -> str:
         base_path.mkdir(parents=True, exist_ok=True)
-        filepath = base_path / filename
-        with open(filepath, "w", encoding="utf-8") as f:
-            if pretty:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            else:
-                json.dump(data, f, ensure_ascii=False)
+        filepath = contained_path(base_path, filename)
+        atomic_write_json(filepath, data, pretty=pretty)
         log(f"💾 Saved JSON to: {filepath}")
         return str(filepath)
 
@@ -61,7 +62,7 @@ def load_json_data(
     def try_load(base_path) -> Optional[Any]:
         if not base_path:
             return None
-        filepath = base_path / filename
+        filepath = contained_path(base_path, filename)
         if not filepath.exists():
             return None
         try:
@@ -94,14 +95,18 @@ def list_saved_json(
     def get_files(base_path) -> list[str]:
         if not base_path or not base_path.exists():
             return []
-        return [f.name for f in base_path.glob("*.json")]
+        return sorted(
+            f.name
+            for f in base_path.glob("*.json")
+            if f.is_file() and f.resolve().is_relative_to(base_path.resolve())
+        )
 
     local_files = get_files(local_path)
     global_files = get_files(global_path)
     mode = STORAGE_MODE.lower()
     if mode == StorageMode.BOTH and merge_both:
         return list(dict.fromkeys(local_files + global_files))
-    return local_files if mode == StorageMode.IN_PROJECT else global_files
+    return local_files if mode == StorageMode.IN_PROJECT and local_path else global_files
 
 
 def get_storage_config_info() -> dict[str, Any]:

@@ -23,6 +23,8 @@ import os
 from context_broker.config import SECRET_ENV_KEY_PATTERNS, SECRET_FILE_PATTERNS
 from context_broker.utils import log
 
+_CONTENT_SIGNATURES = sorted(SECRET_ENV_KEY_PATTERNS, key=len, reverse=True)
+
 
 def _match_secret_pattern(rel_path: str) -> tuple[bool, str]:
     """Check if a file path matches any secret file pattern.
@@ -47,14 +49,13 @@ def _scan_content_for_secrets(content: str) -> tuple[bool, str]:
         (is_secret, matched_signature) tuple.
     """
     lines = content.splitlines()
-    # Only scan first 100 lines — secrets are usually at the top of env files
-    for line in lines[:100]:
+    for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         # Sort signatures by length descending so longer/more specific
         # patterns match first (e.g., "SECRET_KEY" before "SECRET")
-        for signature in sorted(SECRET_ENV_KEY_PATTERNS, key=len, reverse=True):
+        for signature in _CONTENT_SIGNATURES:
             if signature in stripped:
                 return True, signature
     return False, ""

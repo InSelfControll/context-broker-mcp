@@ -17,6 +17,7 @@ from context_broker.config import (
     HONCHO_WORKSPACE_ID,
 )
 from context_broker.context_ttc.tasks import chat_ledger
+from context_broker.context_ttc.tools.identity_tools import normalize_identifier as _safe_id
 from context_broker.identity import resolve_user_peer_id
 from context_broker.project import get_project_name
 
@@ -47,14 +48,6 @@ def _get_honcho_client() -> Any:
     except TypeError:
         _HONCHO_CLIENT = Honcho()
     return _HONCHO_CLIENT
-
-
-def _safe_id(value: str, default: str) -> str:
-    """Normalize external ids before sending them to Honcho."""
-    candidate = (value or default).strip()
-    if not candidate:
-        candidate = default
-    return "".join(char if char.isalnum() or char in {"-", "_", "."} else "-" for char in candidate)
 
 
 def _honcho_session_id(session_id: str, project_root: str = "") -> str:
