@@ -22,12 +22,18 @@ from context_broker.utils import log
 COMMAND_HELP = """Context Broker commands
 Terminal (installed with the context-broker package):
   context-broker --help
+  context-broker update --check
+  context-broker update
+  context-broker start
+  context-broker stop
   context-broker serve
   context-broker connect --project-root "/absolute/path/to/project"
   context-broker integration-config --host codex --project-root "/absolute/path/to/project"
   context-broker dashboard
-Use integration-config --help for supported hosts. Configuration is merged into the agent config. Add --print for preview only.
+Use integration-config --help for supported hosts. Configuration and the usage skill are installed together. Add --print for preview only.
+connect automatically starts or reuses the shared service. serve is optional foreground operation.
 Relayhelm also exposes: relayhelm context-broker --help.
+Install its integration with: relayhelm context-broker install --project-root /absolute/project.
 With its Context Broker plugin enabled: /context-broker status or /context-broker index.
 The index command asks you to choose Index or No index; both modes read relevant history.
 In other MCP clients, use the client's MCP prompt menu to select context-broker;
