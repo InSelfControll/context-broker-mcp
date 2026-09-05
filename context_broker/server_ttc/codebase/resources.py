@@ -19,8 +19,37 @@ from context_broker.server_ttc.tools.helpers import (
 from context_broker.utils import log
 
 
+COMMAND_HELP = """Context Broker commands
+Terminal (installed with the context-broker package):
+  context-broker --help
+  context-broker serve
+  context-broker connect --project-root "/absolute/path/to/project"
+  context-broker integration-config --host codex --project-root "/absolute/path/to/project"
+  context-broker dashboard
+Use integration-config --help for supported hosts. Configuration is printed, not installed.
+Relayhelm also exposes: relayhelm context-broker --help.
+With its Context Broker plugin enabled: /context-broker status or /context-broker index.
+The index command asks you to choose Index or No index; both modes read relevant history.
+In other MCP clients, use the client's MCP prompt menu to select context-broker;
+prompt-to-slash-command mapping depends on the host.
+Ask your agent to call configure_history_indexing to choose history indexing,
+lookup_project_history for a specific issue, and save_model_handoff/load_model_handoff
+when explicitly continuing work across models. Do not preload unrelated project memory.
+"""
+
+
 def register_resources_and_prompts(mcp: FastMCP) -> None:
     """Register MCP resources and prompts."""
+
+    @mcp.resource("context-broker://commands")
+    def commands_resource() -> str:
+        """Read the installed Context Broker commands without loading project memory."""
+        return COMMAND_HELP
+
+    @mcp.prompt("context-broker")
+    def context_broker_prompt() -> str:
+        """Show Context Broker commands, history controls, and model handoffs."""
+        return COMMAND_HELP
 
     @mcp.resource("codebase://auto-context")
     async def auto_context_resource() -> str:

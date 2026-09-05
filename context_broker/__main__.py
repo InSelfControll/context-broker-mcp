@@ -112,41 +112,46 @@ def _run_mcp_server() -> None:
 
 
 def main() -> None:
-    """Run the Context Broker MCP server or web dashboard."""
-    if len(sys.argv) > 1 and sys.argv[1] == "integration-config":
-        import argparse
-        from context_broker.integrations_ttc.tools.config_tools import HOSTS, client_config
+    """Parse commands before starting any server or loading service dependencies."""
+    import argparse
 
-        parser = argparse.ArgumentParser(prog="context-broker integration-config")
-        parser.add_argument("--host", required=True, choices=HOSTS)
-        parser.add_argument("--project-root", required=True)
-        parser.add_argument("--runtime-dir", default="")
-        args = parser.parse_args(sys.argv[2:])
+    from context_broker.integrations_ttc.tools.config_tools import HOSTS
+
+    parser = argparse.ArgumentParser(
+        prog="context-broker",
+        description="Project-scoped context and history for coding agents. "
+        "With no command, start the stdio MCP server (or configured transport).",
+    )
+    commands = parser.add_subparsers(dest="command")
+    commands.add_parser("mcp", help="Start the MCP server using the configured transport")
+    commands.add_parser("dashboard", help="Open the web dashboard service")
+    serve = commands.add_parser("serve", help="Run one shared model and memory pool")
+    serve.add_argument("--port", type=int, default=8771)
+    connect = commands.add_parser("connect", help="Connect an agent to a project's shared service")
+    connect.add_argument("--project-root", required=True)
+    config = commands.add_parser("integration-config", help="Print native coding-agent MCP config")
+    config.add_argument("--host", required=True, choices=HOSTS)
+    config.add_argument("--project-root", required=True)
+    config.add_argument("--runtime-dir", default="")
+    args = parser.parse_args()
+    if args.command == "integration-config":
+        from context_broker.integrations_ttc.tools.config_tools import client_config
+
         sys.stdout.write(client_config(args.host, args.project_root, runtime_dir=args.runtime_dir))
-        return
-    if len(sys.argv) > 1 and sys.argv[1] in {"serve", "connect"}:
-        import argparse
+    elif args.command == "serve":
+        if not 0 < args.port < 65536:
+            serve.error("port must be between 1 and 65535")
+        from context_broker.shared_ttc.tasks.service_tasks import run_shared_server
 
-        parser = argparse.ArgumentParser(prog=f"context-broker {sys.argv[1]}")
-        if sys.argv[1] == "serve":
-            from context_broker.shared_ttc.tasks.service_tasks import run_shared_server
+        run_shared_server(args.port)
+    elif args.command == "connect":
+        from context_broker.shared_ttc.tasks.proxy_tasks import run_agent_proxy
 
-            parser.add_argument("--port", type=int, default=8771)
-            args = parser.parse_args(sys.argv[2:])
-            if not 0 < args.port < 65536:
-                parser.error("port must be between 1 and 65535")
-            run_shared_server(args.port)
-        else:
-            from context_broker.shared_ttc.tasks.proxy_tasks import run_agent_proxy
-
-            parser.add_argument("--project-root", required=True)
-            args = parser.parse_args(sys.argv[2:])
-            run_agent_proxy(args.project_root)
-        return
-    if len(sys.argv) > 1 and sys.argv[1] == "dashboard":
+        run_agent_proxy(args.project_root)
+    elif args.command == "dashboard":
         _run_dashboard()
-        return
-    _run_mcp_server()
+    else:
+        _run_mcp_server()
 
 
 if __name__ == "__main__":

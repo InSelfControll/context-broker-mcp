@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Make CLI help and invalid commands exit without starting a server; expose command help through MCP prompts and resources.
+
 - Return explicit failed task records with reasons and MCP error flags; reject agent-declared failures and failed integration reviews while retaining successful handoffs.
 - Use stateful shared MCP sessions so interactive task-splitting consent reaches stdio clients instead of timing out.
 
