@@ -10,6 +10,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add explicit Index / No index choice for project history; both modes retrieve only issue-relevant excerpts, with bounded scans and no automatic full-memory preload.
+- Check local issue history automatically on question-bearing routing/search calls and document the standalone provider/Cursor/messaging harness design.
+
 - Add immutable cross-model project handoffs preserving exact supplied memory, task failures, decisions, evidence, and file snapshots; reject stale, corrupt, secret-bearing, or oversized context without silent truncation.
 
 - Generate project-bound MCP configuration fragments for Codex, Hermes, Cursor, and Claude Code with native configuration keys and timeout units.

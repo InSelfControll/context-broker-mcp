@@ -75,7 +75,9 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
 
             async def decline(message, response_type, params, context):
                 choices.append(message)
-                return {"value": "Keep one agent"}
+                return {
+                    "value": "No index" if message.startswith("Index this") else "Keep one agent"
+                }
 
             async with Client(transport, elicitation_handler=decline) as first:
 
@@ -140,6 +142,17 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
                         },
                     },
                 )
+                history_choice = await first.call_tool("configure_history_indexing", {})
+                assert history_choice.data["index"] is False
+                assert history_choice.data["history_reads"] is True
+                issue_history = await first.call_tool(
+                    "lookup_project_history", {"query": "No API changes"}
+                )
+                assert issue_history.data["matches"]
+                other_history = await second.call_tool(
+                    "lookup_project_history", {"query": "No API changes"}
+                )
+                assert other_history.data["matches"] == []
                 handoff_args = {"handoff_id": saved.data["handoff_id"], "target_model": "model-b"}
                 loaded = await first.call_tool("load_model_handoff", handoff_args)
                 assert loaded.data["checkpoint"]["state"]["decisions"] == ["No API changes"]

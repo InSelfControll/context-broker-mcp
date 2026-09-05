@@ -94,6 +94,13 @@ silence as consent. Do not split dependent work. If elicitation is unavailable o
 user declines, continue with one agent. Integrate proposals and run verification before
 claiming completion; worker/reviewer prose is not proof that tests ran.
 
+At project setup, offer configure_history_indexing so the user can choose Index or
+No index. Before handling each specific question, call lookup_project_history with
+that issue. No index still reads history directly. Use only relevant returned excerpts;
+never preload complete project memory into an unrelated new session. If partial is true,
+do not claim all history was checked. Verify past solutions against current code.
+Only load a complete handoff when explicitly continuing that work or switching models.
+
 Before switching models, call save_model_handoff with exact messages, the original goal,
 all decisions, constraints, facts, task outcomes and evidence, open questions, and criteria.
 Pass its handoff_id to the next model and call load_model_handoff before continuing.
