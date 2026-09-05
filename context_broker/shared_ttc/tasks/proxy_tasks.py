@@ -21,7 +21,11 @@ class PreserveTaskFailures(Middleware):
         try:
             return await call_next(context)
         except ToolError as exc:
-            if context.message.name != "delegate_large_task":
+            if context.message.name not in {
+                "delegate_large_task",
+                "save_model_handoff",
+                "load_model_handoff",
+            }:
                 raise
             try:
                 record = json.loads(str(exc))

@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add immutable cross-model project handoffs preserving exact supplied memory, task failures, decisions, evidence, and file snapshots; reject stale, corrupt, secret-bearing, or oversized context without silent truncation.
+
 - Generate project-bound MCP configuration fragments for Codex, Hermes, Cursor, and Claude Code with native configuration keys and timeout units.
 
 - Add consent-gated `delegate_large_task`: 2–4 parallel model-pinned proposal workers, shared project context, and an acceptance-criteria integration review; no workers start if the user declines or elicitation is unavailable.

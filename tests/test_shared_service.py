@@ -36,6 +36,7 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
         CONTEXT_BROKER_SHARED_RUNTIME_DIR=str(runtime),
         CONTEXT_BROKER_AUTO_LOAD_ENV="0",
         CONTEXT_BROKER_LLM_BASE_URL="https://provider.invalid/v1",
+        CONTEXT_BROKER_STORAGE_DIR=str(tmp_path / "storage"),
     )
     log = (tmp_path / "server.log").open("w+")
     proc = subprocess.Popen(
@@ -120,6 +121,32 @@ async def test_shared_service_two_proxies_keep_projects_separate(tmp_path):
                 assert failed.structuredContent["status"] == "failed"
                 assert failed.structuredContent["completed"] is False
                 assert "exact model ID" in failed.structuredContent["failure_reason"]
+
+                saved = await first.call_tool(
+                    "save_model_handoff",
+                    {
+                        "source_model": "model-a",
+                        "session_id": "session-a",
+                        "files": ["main.py"],
+                        "state": {
+                            "goal": "Keep context",
+                            "messages": [{"content": "original words"}],
+                            "decisions": ["No API changes"],
+                            "constraints": [],
+                            "facts": [],
+                            "tasks": [],
+                            "acceptance_criteria": ["Context preserved"],
+                            "open_questions": [],
+                        },
+                    },
+                )
+                handoff_args = {"handoff_id": saved.data["handoff_id"], "target_model": "model-b"}
+                loaded = await first.call_tool("load_model_handoff", handoff_args)
+                assert loaded.data["checkpoint"]["state"]["decisions"] == ["No API changes"]
+                isolated = await second.call_tool_mcp("load_model_handoff", handoff_args)
+                assert isolated.isError
+                assert isolated.structuredContent["status"] == "failed"
+                assert "not found" in isolated.structuredContent["failure_reason"]
 
                 for client in (first, second):
                     usage = await client.call_tool("get_memory_usage", {})
