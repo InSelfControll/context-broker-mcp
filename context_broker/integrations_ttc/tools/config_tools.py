@@ -5,10 +5,11 @@ import os
 import sys
 from pathlib import Path
 
-HOSTS = ("codex", "hermes", "cursor", "claude-code")
+HOSTS = ("codex", "hermes", "relayhelm", "cursor", "claude-code")
 DESTINATIONS = {
     "codex": ".codex/config.toml",
     "hermes": "~/.hermes/config.yaml",
+    "relayhelm": "~/.relayhelm/config.yaml",
     "cursor": ".cursor/mcp.json",
     "claude-code": ".mcp.json",
 }
@@ -19,7 +20,7 @@ def client_config(
 ) -> str:
     """Return a TOML or JSON/YAML-compatible fragment for one supported host."""
     if host not in HOSTS:
-        raise ValueError("Choose codex, hermes, cursor, or claude-code")
+        raise ValueError(f"Choose one of: {', '.join(HOSTS)}")
     root = Path(project_root).resolve(strict=True)
     if not root.is_dir():
         raise ValueError("project_root must be an existing directory")
@@ -44,7 +45,7 @@ def client_config(
             "[mcp_servers.context-broker.env]\n"
             + "".join(f"{key} = {json.dumps(value)}\n" for key, value in env.items())
         )
-    if host == "hermes":
+    if host in {"hermes", "relayhelm"}:
         entry.update(timeout=600, connect_timeout=30, elicitation={"enabled": True, "timeout": 300})
         return json.dumps({"mcp_servers": {"context-broker": entry}}, indent=2) + "\n"
     if host == "claude-code":

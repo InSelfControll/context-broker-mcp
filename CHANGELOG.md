@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Support Relayhelm as a native integration host with its own config destination and shared project-bound MCP transport.
+
 - Add explicit Index / No index choice for project history; both modes retrieve only issue-relevant excerpts, with bounded scans and no automatic full-memory preload.
 - Check local issue history automatically on question-bearing routing/search calls and document the standalone provider/Cursor/messaging harness design.
 
