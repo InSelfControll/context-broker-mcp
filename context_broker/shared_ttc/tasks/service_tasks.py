@@ -2,6 +2,7 @@
 
 import os
 import secrets
+import socket
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -88,21 +89,37 @@ def run_shared_server(port: int = 8771) -> None:
     """Serve until stopped by the user; one owner per runtime directory."""
     from context_broker.lifecycle import start_lifecycle_watchdogs
     from context_broker.storage_ttc.tools.json_tools import atomic_write_json
+    from starlette.responses import JSONResponse
+    import uvicorn
 
     directory = runtime_directory()
-    with FileLock(str(directory / "server.lock"), timeout=0):
+    with FileLock(str(directory / "server.lock"), timeout=0), socket.socket() as listener:
+        listener.bind(("127.0.0.1", port))
+        port = listener.getsockname()[1]
         secret = secrets.token_urlsafe(48)
+        server = create_shared_server(secret)
+        runner = None
+
+        @server.custom_route("/health", methods=["GET", "POST"])
+        @server.custom_route("/shutdown", methods=["POST"])
+        async def control(request):
+            if not secrets.compare_digest(
+                request.headers.get("authorization", "").encode(), f"Bearer {secret}".encode()
+            ):
+                return JSONResponse({"error": "Unauthorized"}, status_code=401)
+            if request.url.path == "/shutdown":
+                runner.should_exit = True
+            return JSONResponse({"service": "context-broker"})
+
+        runner = uvicorn.Server(uvicorn.Config(
+            server.http_app(path="/mcp"), host="127.0.0.1", port=port,
+            log_level="warning", timeout_graceful_shutdown=5,
+        ))
         descriptor = directory / "service.json"
         # atomic_write_json uses a private mkstemp file (0600).
         atomic_write_json(descriptor, {"port": port, "token": secret, "pid": os.getpid()})
         try:
             start_lifecycle_watchdogs(shared=True)
-            create_shared_server(secret).run(
-                transport="streamable-http",
-                host="127.0.0.1",
-                port=port,
-                stateless_http=False,
-                show_banner=False,
-            )
+            runner.run(sockets=[listener])
         finally:
             descriptor.unlink(missing_ok=True)

@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Automatically start one authenticated shared service on the first agent connection, with concurrent-start locking, readiness checks, private discovery, and stale-service recovery.
+- Add `start`, `stop`, and `update --check` / `update` commands; refuse unmanaged or dirty installations and restart an active service only after a successful update.
+- Install the packaged Context Broker usage skill alongside native MCP configuration.
+
 - Install integration config automatically with locked atomic merges, backups, preview and custom destinations; configure Relayhelm plugin and project binding together.
 
 - Support Relayhelm as a native integration host with its own config destination and shared project-bound MCP transport.
@@ -74,6 +78,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 📝 explain embedding model bootstrap — `daf2d21`
 - 📝 plan automatic model bootstrap — `c42c60f`
 - 📝 specify automatic model bootstrap — `3e960ac`
+
+## Repository history synchronized — 2026-09-05
+
+### Added
+
+- ✨ install broker integration into existing agent configuration — `59f2217`
+- ✨ support Relayhelm as a native Context Broker host — `4140577`
+
+### Fixed
+
+- 🐛 expose Context Broker commands in runtime help — `8286bbb`
+
+### Chore
+
+- 🔧 bump transformers from 5.8.1 to 5.10.1 (#34) ([#34](https://github.com/InSelfControll/context-broker-mcp/pull/34)) — `bd05c07`
+- 🔧 bump setuptools from 81.0.0 to 83.0.0 — `8c9b01d`
+- 🔧 bump torch from 2.12.0 to 2.13.0 — `8349a2c`
+- 🔧 bump mcp from 1.27.1 to 1.28.1 — `dc62541`
+- 🔧 bump pydantic-settings from 2.14.1 to 2.14.2 — `7de12e2`
+- 🔧 bump joserfc from 1.6.5 to 1.6.8 — `64167de`
+- 🔧 bump cryptography from 48.0.0 to 50.0.0 — `706ac32`
+- 🔧 bump starlette from 1.0.0 to 1.3.1 — `4ea65eb`
+- 🔧 bump python-multipart from 0.0.28 to 0.0.31 — `93150b6`
+- 🔧 bump pyjwt from 2.12.1 to 2.13.0 — `0bef9d0`
+- 🔧 update uv.lock after pyproject.toml changes (#20) ([#20](https://github.com/InSelfControll/context-broker-mcp/pull/20)) — `f00171b`
+
+### Uncategorized
+
+- 📝 Fix/mcp lifecycle and bug audit 2026 09 05 (#36) ([#36](https://github.com/InSelfControll/context-broker-mcp/pull/36)) — `ec6e8dc`
+- 📝 Fix broker lifecycle, shared project memory, delegation and selective history (#35) ([#35](https://github.com/InSelfControll/context-broker-mcp/pull/35)) — `ce6a74b`
+- 📝 Merge pull request #31 from InSelfControll/dependabot/uv/setuptools-83.0.0 ([#31](https://github.com/InSelfControll/context-broker-mcp/pull/31)) — `1429a5d`
+- 📝 Merge pull request #30 from InSelfControll/dependabot/uv/torch-2.13.0 ([#30](https://github.com/InSelfControll/context-broker-mcp/pull/30)) — `b57267d`
+- 📝 Merge pull request #29 from InSelfControll/dependabot/uv/mcp-1.28.1 ([#29](https://github.com/InSelfControll/context-broker-mcp/pull/29)) — `b66bf16`
+- 📝 Merge pull request #28 from InSelfControll/dependabot/uv/joserfc-1.6.8 ([#28](https://github.com/InSelfControll/context-broker-mcp/pull/28)) — `5007f7a`
+- 📝 Merge pull request #26 from InSelfControll/dependabot/uv/pydantic-settings-2.14.2 ([#26](https://github.com/InSelfControll/context-broker-mcp/pull/26)) — `7c00318`
+- 📝 Merge pull request #25 from InSelfControll/dependabot/uv/starlette-1.3.1 ([#25](https://github.com/InSelfControll/context-broker-mcp/pull/25)) — `afa2a2e`
+- 📝 Merge pull request #33 from InSelfControll/dependabot/uv/cryptography-50.0.0 ([#33](https://github.com/InSelfControll/context-broker-mcp/pull/33)) — `1816a1c`
+- 📝 Merge pull request #23 from InSelfControll/dependabot/uv/python-multipart-0.0.31 ([#23](https://github.com/InSelfControll/context-broker-mcp/pull/23)) — `5a90d37`
+- 📝 Merge pull request #22 from InSelfControll/dependabot/uv/pyjwt-2.13.0 ([#22](https://github.com/InSelfControll/context-broker-mcp/pull/22)) — `0cd66f8`
+- 📝 Cursor/token savings history (#32) ([#32](https://github.com/InSelfControll/context-broker-mcp/pull/32)) — `5289bf9`
 
 ## [Unreleased] — 2026-07-05
 

@@ -20,6 +20,10 @@ def test_install_preserves_existing_config_and_is_idempotent(tmp_path, host):
     assert result['status'] == 'updated'
     assert Path(result['backup_path']).read_text() == original
     updated = path.read_text()
+    skill = Path(result['skill_path'])
+    assert skill.is_file()
+    assert skill.parent.name == 'context-broker'
+    assert skill.stat().st_mode & 0o077 == 0
     assert 'user-model' in updated and 'other' in updated
     if host in {'codex', 'hermes', 'relayhelm'}:
         assert '# keep comment' in updated

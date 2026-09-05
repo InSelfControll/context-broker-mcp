@@ -114,7 +114,8 @@ def install_config(host: str, project_root: str, *, runtime_dir: str = "",
             _mapping(plugin, "settings").update(server="context-broker", project_root=str(root))
         rendered = serialize(document)
         if rendered == original:
-            return {"status": "unchanged", "config_path": str(destination)}
+            return {"status": "unchanged", "config_path": str(destination),
+                    "skill_path": str(_install_skill(host, root, destination))}
         if destination.is_symlink() or destination.exists() != exists:
             raise RuntimeError("Config changed during installation; retry")
         if exists and destination.read_text(encoding="utf-8") != original:
@@ -124,4 +125,30 @@ def install_config(host: str, project_root: str, *, runtime_dir: str = "",
             _write_atomic(Path(backup), original, 0o600)
         _write_atomic(destination, rendered, 0o600)
         return {"status": "updated", "config_path": str(destination),
-                "backup_path": backup if exists else ""}
+                "backup_path": backup if exists else "",
+                "skill_path": str(_install_skill(host, root, destination))}
+
+
+def _install_skill(host: str, root: Path, config_path: Path) -> Path:
+    """Install the packaged skill into the host's discovery path, preserving prior text."""
+    from importlib.resources import files
+
+    directories = {
+        "codex": root / ".agents", "cursor": root / ".cursor",
+        "claude-code": root / ".claude", "hermes": config_path.parent,
+        "relayhelm": config_path.parent,
+    }
+    path = directories[host] / "skills" / "context-broker" / "SKILL.md"
+    if path.resolve() != path.absolute():
+        raise ValueError("Skill destination must not contain symlinks")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    content = files("context_broker").joinpath(
+        "integrations_ttc/assets/context-broker/SKILL.md"
+    ).read_text(encoding="utf-8")
+    with FileLock(str(path) + ".lock", timeout=10):
+        original = path.read_text(encoding="utf-8") if path.exists() else None
+        if original != content:
+            if original is not None:
+                _write_atomic(path.with_suffix(".md.bak"), original, 0o600)
+            _write_atomic(path, content, 0o600)
+    return path

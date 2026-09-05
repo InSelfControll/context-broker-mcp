@@ -22,24 +22,29 @@ Context Broker uses **one local ML model** — an embedding model, not a chat/LL
 
 ### Share one broker across coding agents
 
-Start one local service, using the same installed environment as your agents:
-
-```sh
-CONTEXT_BROKER_AUTO_LOAD_ENV=0 context-broker serve
-```
-
 Configure each agent's stdio MCP entry to run:
 
 ```sh
 context-broker connect --project-root /absolute/path/to/project
 ```
 
+The first connection starts the shared service automatically. To manage it explicitly:
+
+```sh
+context-broker start
+context-broker stop  # disconnects every shared client
+context-broker update --check
+context-broker update
+```
+
 This works through the standard MCP stdio interface used by coding agents; each
 agent still uses its own MCP configuration format. It does not require provider
-API keys. Configure model/storage/backend settings on the service process. Start
-it once before connecting agents, and stop it explicitly when finished; `connect`
-does not auto-start a daemon. The service listens only on `127.0.0.1:8771` (change
-with `serve --port`). All clients must run as the same OS user. A private service
+API keys. Inject model/storage/backend settings into the first agent's MCP environment;
+the shared child inherits them with automatic dotenv discovery disabled. Concurrent
+connections use a startup lock and authenticated readiness check to reuse one server.
+It survives agent exits and uses an OS-assigned port on `127.0.0.1`. For foreground
+operation, `serve` still defaults to port 8771 (`serve --port` selects another port).
+All clients must run as the same OS user. A private service
 descriptor in `~/.cache/context-broker/service` holds its random bearer token;
 `CONTEXT_BROKER_SHARED_RUNTIME_DIR` selects another private runtime directory.
 
@@ -85,12 +90,24 @@ context-broker integration-config --host claude-code --project-root /absolute/pr
 ```
 
 The command merges into existing settings and saves a `.context-broker.bak` backup.
-Relayhelm also gets its plugin enabled with the same project binding. Use `--print`
+The packaged Context Broker skill is installed in the host's skill directory.
+Relayhelm also gets its bundled plugin enabled with the same project binding. Use `--print`
 for preview only, or `--config-path /path/to/config` for a custom profile. TOML/YAML
 comments are preserved; JSONC is normalized to JSON (the backup retains comments).
-Start `context-broker serve` first. Each connection launches a lightweight
+Each connection automatically starts or reuses the shared service and launches a lightweight
 project-bound proxy using the absolute Python interpreter path. The optional
 `--runtime-dir` must match the service's `CONTEXT_BROKER_SHARED_RUNTIME_DIR`.
+
+`update` supports uv tool installations and clean editable Git checkouts. It refuses
+externally managed installations such as Nix, and refuses dirty Git checkouts.
+For uv tools, it resolves the upstream revision once and installs that immutable SHA
+with dashboard and integration extras. An active service is stopped before package
+changes and restarted using a fresh interpreter after success. Reconnect agent
+sessions afterward. A failed package update leaves the service stopped: repair the
+installation before running `start`. Older services without the authenticated control
+endpoint must be stopped once in their original terminal before upgrading.
+Rerun `integration-config` after an update to refresh installed skills and configuration.
+`--check` prints the update plan without changing files or stopping the service.
 
 | Host | Configuration | Delegation settings |
 | --- | --- | --- |
