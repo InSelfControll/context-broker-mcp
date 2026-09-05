@@ -79,6 +79,7 @@ Generate a configuration fragment using the installed broker interpreter:
 ```sh
 context-broker integration-config --host codex --project-root /absolute/project
 context-broker integration-config --host hermes --project-root /absolute/project
+context-broker integration-config --host relayhelm --project-root /absolute/project
 context-broker integration-config --host cursor --project-root /absolute/project
 context-broker integration-config --host claude-code --project-root /absolute/project
 ```
@@ -91,6 +92,7 @@ project-bound proxy using the absolute Python interpreter path. The optional
 | Host | Configuration | Delegation settings |
 | --- | --- | --- |
 | [Codex](https://developers.openai.com/codex/mcp/) | `.codex/config.toml`, `mcp_servers` | 600-second tool timeout; allow interactive MCP elicitation in host approvals |
+| [Relayhelm](https://github.com/InSelfControll/relayhelm) | `~/.relayhelm/config.yaml`, `mcp_servers` | Project-bound shared service; 600-second tool timeout, form elicitation enabled |
 | [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | `~/.hermes/config.yaml`, `mcp_servers` | JSON fragment is valid YAML; 600-second tool timeout, form elicitation enabled |
 | [Cursor](https://cursor.com/docs/mcp) | `.cursor/mcp.json`, `mcpServers` | Uses the host's interactive elicitation and timeout behavior |
 | [Claude Code](https://code.claude.com/docs/en/mcp) | `.mcp.json`, `mcpServers` | 600000-millisecond per-server timeout on versions supporting that setting |
