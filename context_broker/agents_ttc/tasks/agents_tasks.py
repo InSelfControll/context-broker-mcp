@@ -58,7 +58,7 @@ def validate_agents_md(project_root: str) -> dict[str, Any]:
     result = validate_agents_md_content(content)
 
     if not result["exists"]:
-        log(f"⚠️ No AGENTS.md found for {root.name}")
+        log(f"⚠ No AGENTS.md found for {root.name}")
         return {
             "status": "missing",
             "path": str(root / "AGENTS.md"),
@@ -89,7 +89,7 @@ def generate_agents_md(project_root: str, force: bool = False) -> dict[str, Any]
 
     if existing and not force:
         path = root / "AGENTS.md"
-        log(f"⚠️ AGENTS.md already exists at {path}. Use force=True to overwrite.")
+        log(f"⚠ AGENTS.md already exists at {path}. Use force=True to overwrite.")
         return {
             "status": "exists",
             "path": str(path),
@@ -151,6 +151,6 @@ def scan_for_missing_agents_md(project_root: str, max_depth: int = 3) -> list[di
     try:
         _scan(root, 0)
     except PermissionError as e:
-        log(f"⚠️ Permission error scanning {root}: {e}", "WARN")
+        log(f"⚠ Permission error scanning {root}: {e}", "WARN")
 
     return results

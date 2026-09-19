@@ -60,7 +60,7 @@ def read_agents_md(project_root: str | Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="ignore")
     except Exception as e:
-        log(f"⚠️ Error reading AGENTS.md: {e}", "WARN")
+        log(f"⚠ Error reading AGENTS.md: {e}", "WARN")
         return ""
 
 
@@ -313,7 +313,7 @@ def _safe_read(path: Path, max_chars: int = 5000) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="ignore")[:max_chars]
     except Exception as e:
-        log(f"⚠️ Error reading {path}: {e}", "WARN")
+        log(f"⚠ Error reading {path}: {e}", "WARN")
         return ""
 
 

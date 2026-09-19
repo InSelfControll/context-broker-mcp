@@ -125,7 +125,7 @@ class TestDocContentGeneration:
             }
         ]
         content = _generate_doc_content("api", "feat", commits)
-        assert "⚠️ Breaking Changes" in content
+        assert "⚠ Breaking Changes" in content
         assert "remove old API" in content
 
     def test_related_files_limit(self) -> None:

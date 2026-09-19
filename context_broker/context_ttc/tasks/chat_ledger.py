@@ -28,7 +28,9 @@ File schema::
 """
 
 import json
+import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -79,6 +81,21 @@ def _read(path: Path) -> dict[str, Any]:
 
 def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
     atomic_write_json(path, payload)
+
+
+_LEDGER_LOCKS: dict[str, threading.Lock] = {}
+_LEDGER_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(path: Path) -> threading.Lock:
+    """Per-ledger-file lock serializing read-modify-write within this process."""
+    key = str(path)
+    with _LEDGER_LOCKS_GUARD:
+        lock = _LEDGER_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _LEDGER_LOCKS[key] = lock
+        return lock
 
 
 def append_turn(

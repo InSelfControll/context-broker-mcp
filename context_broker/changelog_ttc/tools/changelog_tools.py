@@ -22,7 +22,7 @@ COMMIT_TYPE_EMOJI: dict[str, str] = {
     "fix": "🐛",
     "security": "🔒",
     "perf": "⚡",
-    "refactor": "♻️",
+    "refactor": "♻",
     "docs": "📝",
     "style": "💄",
     "test": "✅",
@@ -81,10 +81,10 @@ def _run_git(args: list[str], cwd: str = ".") -> str:
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
-        log(f"⚠️ Git command failed: {' '.join(args)} — {e.stderr}", "WARN")
+        log(f"⚠ Git command failed: {' '.join(args)} — {e.stderr}", "WARN")
         return ""
     except FileNotFoundError:
-        log("⚠️ Git not found in PATH", "WARN")
+        log("⚠ Git not found in PATH", "WARN")
         return ""
 
 

@@ -2,11 +2,36 @@
 Storage path helpers and mode routing.
 """
 
+import re
 from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 from context_broker.config import IN_PROJECT_FOLDER, STORAGE_BASE_DIR, STORAGE_MODE, StorageMode
 from context_broker.utils import log
+
+_DRIVE_PREFIX = re.compile(r"^[A-Za-z]:")
+
+
+def sanitize_storage_component(
+    value: str, *, kind: str, allow_nested: bool = False
+) -> str:
+    """Validate a caller-controlled storage path component.
+
+    Rejects absolute paths, drive-letter prefixes, and ``..`` traversal so
+    MCP-supplied project names, subdirectories, and filenames cannot escape
+    the approved storage roots. Returns the cleaned relative path.
+    """
+    if not value:
+        return value
+    normalized = value.replace("\\", "/")
+    if normalized.startswith("/") or _DRIVE_PREFIX.match(value):
+        raise ValueError(f"Invalid {kind}: absolute paths are not allowed")
+    parts = [segment for segment in normalized.split("/") if segment not in ("", ".")]
+    if not parts or any(segment == ".." for segment in parts):
+        raise ValueError(f"Invalid {kind}: path traversal is not allowed")
+    if not allow_nested and len(parts) > 1:
+        raise ValueError(f"Invalid {kind}: must be a single path component")
+    return "/".join(parts)
 
 
 def contained_path(base: Path, *parts: str) -> Path:
@@ -30,6 +55,9 @@ def get_storage_dirs(
     project_name: str, subdir: str = "", project_root: str = ""
 ) -> tuple[Optional[Path], Path]:
     """Get local and global storage directories for a project."""
+    project_name = sanitize_storage_component(project_name, kind="project_name")
+    subdir = sanitize_storage_component(subdir, kind="subdir", allow_nested=True)
+
     from context_broker.shared_ttc.tools.scope import PROJECT_ROOT
     from context_broker.project import resolve_project_root, get_project_name
 
@@ -66,7 +94,7 @@ def get_storage_dir(
     mode = STORAGE_MODE.lower()
     if mode == StorageMode.IN_PROJECT:
         if not local_path:
-            log("⚠️ project_root required for in-project storage, falling back to global", "WARN")
+            log("⚠ project_root required for in-project storage, falling back to global", "WARN")
             base = global_path
         else:
             base = local_path

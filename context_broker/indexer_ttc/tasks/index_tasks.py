@@ -2,6 +2,7 @@
 Index building and lifecycle tasks.
 """
 
+from collections.abc import Callable
 from typing import Any, Optional
 
 import numpy as np
@@ -27,15 +28,36 @@ from context_broker.project import load_ignore_patterns
 from context_broker.utils import count_tokens, log
 
 
-def get_index_for_project(root_path: str) -> Optional[dict[str, Any]]:
+ProgressCallback = Callable[[str], None]
+"""Sync callback receiving human-readable stage messages during long operations."""
+
+
+def _emit(callback: Optional[ProgressCallback], message: str) -> None:
+    """Deliver a stage message, never letting callback errors break indexing."""
+    if callback is None:
+        return
+    try:
+        callback(message)
+    except Exception as e:
+        log(f"⚠ Progress callback failed: {e}", "WARN")
+
+
+def get_index_for_project(
+    root_path: str,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Optional[dict[str, Any]]:
     """Reuse one validated project index across all sessions in this process."""
     root_path = state.canonical_root(root_path)
     with state.project_lock(root_path):
-        return _get_index_locked(root_path)
+        return _get_index_locked(root_path, progress_callback)
 
 
-def _get_index_locked(root_path: str) -> Optional[dict[str, Any]]:
+def _get_index_locked(
+    root_path: str,
+    progress_callback: Optional[ProgressCallback] = None,
+) -> Optional[dict[str, Any]]:
     ignore_patterns = load_ignore_patterns(root_path)
+    _emit(progress_callback, "📂 Collecting project files...")
     file_paths = collect_project_files(
         root_path,
         ignore_dirs=DEFAULT_IGNORE_DIRS,
@@ -53,6 +75,10 @@ def _get_index_locked(root_path: str) -> Optional[dict[str, Any]]:
     if cached is not None:
         index_data = dict(cached, ignore_patterns=ignore_patterns, project_root=root_path)
         state.INDEXES[root_path] = index_data
+        _emit(
+            progress_callback,
+            f"⚡ Index loaded from disk cache ({len(cached['paths'])} files)",
+        )
         return index_data
 
     encoder = get_encoder()
@@ -68,6 +94,8 @@ def _get_index_locked(root_path: str) -> Optional[dict[str, Any]]:
         nonlocal embeddings, row
         if not documents:
             return
+        if row == 0:
+            _emit(progress_callback, f"🧠 Embedding {len(file_paths)} files...")
         with state.INFERENCE_LOCK:
             batch = np.asarray(
                 get_model().encode(
@@ -83,6 +111,7 @@ def _get_index_locked(root_path: str) -> Optional[dict[str, Any]]:
         row += len(batch)
         documents.clear()
 
+    _emit(progress_callback, f"📖 Reading {len(file_paths)} files...")
     for file_path in file_paths:
         content = read_file_content(file_path, max_chars=read_cap)
         if content is None:

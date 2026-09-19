@@ -13,6 +13,7 @@ from context_broker.project_ttc.tasks.root_tasks import (
     resolve_project_root,
 )
 from context_broker.project_ttc.tools.ignore_tools import parse_ignore_file
+from context_broker.project_ttc.tools.worktree_tools import resolve_worktree_main_root
 
 __all__ = [
     "parse_ignore_file",
@@ -21,5 +22,6 @@ __all__ = [
     "load_ignore_patterns",
     "find_project_root",
     "resolve_project_root",
+    "resolve_worktree_main_root",
     "get_project_name",
 ]
