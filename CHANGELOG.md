@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- 🔒 Session/peer id normalization is collision-free again at runtime: `identity_tools.normalize_identifier` appends a short digest when normalization is lossy, so distinct ids can never share a Redis key, ledger file, or Honcho session (`id_tools.safe_id` is now an alias). One-time key-format change: stored sessions whose ids contained special characters (e.g. spaces) are orphaned — their old keys were already ambiguous from id collisions. Dropped the orphaned `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX` knob (the live setting is `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES`, default 128).
 - ⬆️ Dependency refresh to latest Python modules (`uv lock --upgrade`): sentence-transformers 6.1.0, torch 2.14.0, transformers 5.17.0, scikit-learn 1.9.1, tiktoken 0.14.0, starlette 1.6.0, uvicorn 0.53.0. fastmcp intentionally pinned `<4` (3.4.7): fastmcp 4 / mcp 2.x adopt the 2026-07-28 protocol era, which removes server-initiated elicitation (SEP-2322) and breaks delegation/history consent, the shared-service proxy, and the downstream MCP client. Full suite passes (376 tests).
 
 ## [Unreleased] — 2026-09-05

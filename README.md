@@ -644,7 +644,6 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session by default | `1` |
 | `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
 | `CONTEXT_BROKER_WORKTREE_SHARED_ROOT` | Resolve linked git worktrees to the main checkout so index/cache/storage are shared across worktrees | `1` |
-| `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX` | Maximum cached router plans (LRU bound) | `256` |
 | `CONTEXT_BROKER_REGEX_MAX_PATTERN_CHARS` | Maximum caller regex length for `find_in_codebase` | `2000` |
 | `CONTEXT_BROKER_REGEX_MATCH_TIMEOUT_SECONDS` | Per-file regex match timeout (ReDoS guard) | `2.0` |
 | `CONTEXT_BROKER_AUTH_TOKEN` | Bearer token required on WS transport and dashboard when set | *(empty)* |
