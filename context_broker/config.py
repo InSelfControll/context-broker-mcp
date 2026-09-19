@@ -421,10 +421,6 @@ WORKTREE_SHARED_ROOT: bool = os.getenv(
 index, caches, and storage digest are shared across all worktrees of a repo.
 Set to 0 to index each worktree as its own project."""
 
-ROUTER_PLAN_CACHE_MAX: int = max(
-    0, _get_env_int("CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX", 256)
-)
-"""Maximum cached router plans (LRU). Bounds memory growth from unique tasks."""
 ENABLE_PROGRESS_NOTIFICATIONS: bool = os.getenv(
     "CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS", "1"
 ).lower() in {"1", "true", "yes", "on"}
