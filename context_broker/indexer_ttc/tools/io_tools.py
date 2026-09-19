@@ -19,8 +19,9 @@ def read_file_content(
 ) -> Optional[str]:
     """Read file content safely with encoding handling.
 
-    SECURITY NOTE: This function performs content-based secret detection.
-    If a file contains secret-key signatures (e.g., API_KEY=..., PASSWORD=...),
+    SECURITY NOTE: This function performs content-based secret detection over
+    the entire bounded slice being returned (not just a leading preview). If
+    a file contains secret-key signatures (e.g., API_KEY=..., PASSWORD=...),
     it is blocked and None is returned. The block is logged for audit purposes.
     """
     try:

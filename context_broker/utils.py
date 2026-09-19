@@ -46,7 +46,7 @@ def log_ascii_table(
 [Broker] +-------------------------------------------------------+
 [Broker] | 📊 TOKEN REPORT: {project_name:<29} |
 [Broker] +-------------------------------------------------------+
-[Broker] | 🗂️  Indexed corpus: {total_tokens:>10,} tokens            |
+[Broker] | 🗂  Indexed corpus: {total_tokens:>10,} tokens            |
 [Broker] | 📤  This reply     : {sent_tokens:>10,} tokens            |
 [Broker] | 💰  Not sent       : {saved_tokens:>10,} ({saved_percent:>5.1f}%)         |
 [Broker] +-------------------------------------------------------+

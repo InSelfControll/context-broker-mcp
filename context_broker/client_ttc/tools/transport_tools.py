@@ -4,31 +4,13 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-import os
 from typing import Any
 
 from context_broker.client_ttc.tools.contract_tools import (
     DownstreamServerConfig,
     DownstreamTransport,
 )
-
-_SAFE_ENV_KEYS = {"PATH", "HOME", "USER", "LANG", "LC_ALL", "TERM", "SHELL", "TMPDIR"}
-
-
-def filtered_stdio_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
-    """Return a safe environment for stdio MCP subprocesses.
-
-    Secrets from the parent process are not inherited unless explicitly supplied
-    by the server config. XDG variables are kept because many CLIs need them for
-    cache/config directory discovery.
-    """
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if key in _SAFE_ENV_KEYS or key.startswith("XDG_")
-    }
-    env.update(extra_env or {})
-    return env
+from context_broker.client_ttc.tools.environment_tools import filtered_stdio_env
 
 
 @asynccontextmanager

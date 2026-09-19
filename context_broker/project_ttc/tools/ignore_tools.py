@@ -22,7 +22,7 @@ def parse_ignore_file(filepath: Path) -> list[str]:
                     continue
                 patterns.append(line)
     except Exception as e:
-        log(f"⚠️ Error reading ignore file {filepath}: {e}", "WARN")
+        log(f"⚠ Error reading ignore file {filepath}: {e}", "WARN")
     return patterns
 
 

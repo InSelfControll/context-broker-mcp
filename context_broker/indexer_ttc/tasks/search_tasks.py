@@ -5,7 +5,11 @@ from typing import Any
 import numpy as np
 
 from context_broker.config import RESULT_FILE_MAX_CHARS
-from context_broker.indexer_ttc.tasks.index_tasks import get_index_for_project
+from context_broker.indexer_ttc.tasks.index_tasks import (
+    ProgressCallback,
+    _emit,
+    get_index_for_project,
+)
 from context_broker.indexer_ttc.tasks.snippet_tasks import (
     extract_query_terms,
     prepare_result_content,
@@ -44,7 +48,12 @@ def similarity_scores(query: np.ndarray, embeddings: np.ndarray) -> np.ndarray:
     return scores
 
 
-def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, Any]:
+def search_codebase(
+    query: str,
+    project_root: str,
+    top_k: int = 5,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
     """Search one canonical project using the process-wide model and cache pool."""
     if not project_root or not query.strip():
         raise ValueError("project_root and query are required")
@@ -52,11 +61,16 @@ def search_codebase(query: str, project_root: str, top_k: int = 5) -> dict[str, 
         raise ValueError("top_k must be positive")
     project_root = state.canonical_root(project_root)
     with state.project_lock(project_root):
-        return _search_locked(query, project_root, top_k)
+        return _search_locked(query, project_root, top_k, progress_callback)
 
 
-def _search_locked(query: str, project_root: str, top_k: int) -> dict[str, Any]:
-    idx = get_index_for_project(project_root)
+def _search_locked(
+    query: str,
+    project_root: str,
+    top_k: int,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    idx = get_index_for_project(project_root, progress_callback=progress_callback)
     if idx is None:
         raise ValueError(f"No files found in {project_root}")
     cache_key = generate_cache_key(query, top_k)
@@ -74,6 +88,7 @@ def _search_locked(query: str, project_root: str, top_k: int) -> dict[str, Any]:
         state.QUERY_CACHE[project_root] = cache
         return _render_result(query, cached["result_paths"], cached.get("scores", {}), idx, True)
 
+    _emit(progress_callback, f"🧮 Scoring {len(idx['paths'])} indexed documents...")
     with state.INFERENCE_LOCK:
         query_vector = get_model().encode([query])
     scores = similarity_scores(query_vector, idx["embeddings"])

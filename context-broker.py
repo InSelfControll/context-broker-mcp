@@ -31,7 +31,7 @@ Environment Variables:
     CONTEXT_BROKER_LOCAL_ONLY - Prefer cached models; bootstrap-download missing models
     CONTEXT_BROKER_AUTO_LOAD_ENV - Load the nearest .env file (default: enabled)
     CONTEXT_BROKER_TRANSPORT - Transport: stdio, sse, streamable-http, or ws
-    CONTEXT_BROKER_HOST - Host for network transports (default: 0.0.0.0)
+    CONTEXT_BROKER_HOST - Host for network transports (default: all interfaces)
     CONTEXT_BROKER_PORT - Port for network transports (default: 8765)
 """
 
