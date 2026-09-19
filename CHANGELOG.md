@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] — 2026-09-18
+
+### Changed
+
+- ⬆️ Dependency refresh to latest Python modules (`uv lock --upgrade`): fastmcp 4.0.5, sentence-transformers 6.1.0, torch 2.14.0, transformers 5.17.0, scikit-learn 1.9.1, tiktoken 0.14.0, starlette 1.6.0, uvicorn 0.53.0. Full suite passes (255 tests); MCP smoke test verified on fastmcp 4.0.5 (36 tools).
+
 ## [Unreleased] — 2026-08-22
 
 ### Added
