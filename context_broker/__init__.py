@@ -5,7 +5,7 @@ A Model Context Protocol (MCP) server that provides semantic search capabilities
 for codebases using sentence transformers.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.4.0"
 __author__ = "Context Broker Team"
 
 def __getattr__(name: str):

@@ -1,14 +1,33 @@
 [project]
 name = "context-broker"
-version = "0.3.0"
-description = "A Model Context Protocol (MCP) server for semantic code search using sentence transformers"
+version = "0.4.0"
+description = "MCP server for semantic code search, cross-chat memory, and token-slim routing — cut LLM token usage 80-95%, 100% local"
 readme = "README.md"
 requires-python = ">=3.13"
 license = {text = "MIT"}
 authors = [
     {name = "Context Broker Team"},
 ]
-keywords = ["mcp", "semantic-search", "code-search", "ai", "claude", "kimi"]
+keywords = [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "semantic-search",
+    "code-search",
+    "codebase-search",
+    "rag",
+    "context-engineering",
+    "token-optimization",
+    "llm-context",
+    "ai-coding-assistant",
+    "claude",
+    "claude-code",
+    "cursor",
+    "codex",
+    "kimi",
+    "sentence-transformers",
+    "fastmcp",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -59,10 +78,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/context-broker"
-Documentation = "https://github.com/yourusername/context-broker#readme"
-Repository = "https://github.com/yourusername/context-broker"
-Issues = "https://github.com/yourusername/context-broker/issues"
+Homepage = "https://github.com/InSelfControll/context-broker-mcp"
+Documentation = "https://github.com/InSelfControll/context-broker-mcp#readme"
+Repository = "https://github.com/InSelfControll/context-broker-mcp"
+Issues = "https://github.com/InSelfControll/context-broker-mcp/issues"
 
 [project.scripts]
 context-broker = "context_broker.__main__:main"

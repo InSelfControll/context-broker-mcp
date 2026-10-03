@@ -1,4 +1,17 @@
-# Context Broker MCP Server - Usage Guide
+<div align="center">
+
+# 📖 Context Broker — Usage Guide
+
+**Everything you need to run, configure, and master Context Broker.**
+
+[![⭐ Star on GitHub](https://img.shields.io/github/stars/InSelfControll/context-broker-mcp?style=social)](https://github.com/InSelfControll/context-broker-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+[🏠 README](README.md) · [🏗️ Architecture](ARCHITECTURE.md) · [🤝 Contributing](CONTRIBUTING.md) · [📜 Changelog](CHANGELOG.md)
+
+</div>
+
+---
 
 ## Table of Contents
 
