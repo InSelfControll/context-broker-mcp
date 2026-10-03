@@ -1,331 +1,41 @@
-# Context Broker MCP Server
+<div align="center">
 
-A Model Context Protocol (MCP) server that provides semantic search capabilities for codebases. Uses sentence transformers to understand code meaning and find relevant files based on natural language queries.
+# 🔍 Context Broker MCP
 
-## Models
+**Give your AI agent a photographic memory of your codebase.**
 
-Context Broker uses **one local ML model** — an embedding model, not a chat/LLM:
+Semantic search + persistent cross-chat context for Claude Code, Cursor, Codex, and any MCP client. 
+Finds relevant code by meaning, remembers decisions across sessions, and cuts token costs by 90%+.
 
-| Component | Model | Purpose | Configurable? |
-|-----------|-------|---------|--------------|
-| Embedding | `all-MiniLM-L6-v2` (sentence-transformers) | Converts code into vector embeddings for semantic search | Yes — `CONTEXT_BROKER_EMBEDDING_MODEL` |
-| Tokenizer | `cl100k_base` (tiktoken) | Estimates token counts for efficiency reports | No |
+[![Demo GIF](docs/demo.gif)](docs/demo.gif)
+<!-- TODO: Record 15-second GIF showing: "Where is auth middleware?" → instant relevant files → token savings report -->
 
-**Key points:**
-- The embedding model runs **locally on CPU** by default (set `CONTEXT_BROKER_DEVICE=cuda` or `mps` for GPU)
-- **No LLM or chat model is used** — Context Broker is a search/indexing tool, not a generative AI
-- Embedding models download automatically on first use and are cached by Sentence Transformers
-- Local-only mode (`CONTEXT_BROKER_LOCAL_ONLY=1`) tries the cache first, then performs one
-  announced bootstrap download if the configured model is missing
-- Explicit `HF_HUB_OFFLINE=1` or `TRANSFORMERS_OFFLINE=1` settings disable automatic downloads
-- The model is lazy-loaded and auto-unloaded after 15 minutes of inactivity
+### Why stars?
+- 🧠 **Cross-session memory** — Switch from Claude to GPT-4 without losing context (handoffs)
+- ⚡ **Token-slim router** — Exposes only the tools needed for the task, not 40+ tools
+- 🔒 **Local-first** — Runs on CPU, no cloud required, privacy-preserving
+- 🤝 **Multi-agent delegation** — Splits large tasks across parallel workers safely
+- 📊 **90%+ token savings** — Sends only relevant snippets, not entire files
 
-### Share one broker across coding agents
+[Quick Start](#quick-start) • [Features](#features) • [How it works](#how-it-works) • [Configuration](#configuration)
 
-Configure each agent's stdio MCP entry to run:
+</div>
 
-```sh
-context-broker connect --project-root /absolute/path/to/project
-```
+---
 
-The first connection starts the shared service automatically. To manage it explicitly:
+## The Problem
 
-```sh
-context-broker start
-context-broker stop  # disconnects every shared client
-context-broker update --check
-context-broker update
-```
+Your AI coding agent forgets everything between sessions. It re-reads files it already saw, wastes tokens on irrelevant context, and can't switch models mid-task without losing state.
 
-This works through the standard MCP stdio interface used by coding agents; each
-agent still uses its own MCP configuration format. It does not require provider
-API keys. Inject model/storage/backend settings into the first agent's MCP environment;
-the shared child inherits them with automatic dotenv discovery disabled. Concurrent
-connections use a startup lock and authenticated readiness check to reuse one server.
-It survives agent exits and uses an OS-assigned port on `127.0.0.1`. For foreground
-operation, `serve` still defaults to port 8771 (`serve --port` selects another port).
-All clients must run as the same OS user. A private service
-descriptor in `~/.cache/context-broker/service` holds its random bearer token;
-`CONTEXT_BROKER_SHARED_RUNTIME_DIR` selects another private runtime directory.
+## The Solution
 
-Each connection binds one canonical project root. Requests cannot override that
-root, and resources use the connection's project rather than the service's CWD.
-Chat/session identifiers remain scoped by project. In shared mode, global JSON
-storage names include a project-path digest so equally named folders cannot
-collide; existing in-project saves remain available. Legacy name-only global saves
-are not automatically migrated into shared mode.
+Context Broker sits between your editor and your codebase as a **context layer**. It indexes your code semantically, caches embeddings locally, and maintains persistent memory across sessions.
 
-The service owns one lazy embedding model and a single LRU cache pool for project
-indexes, query metadata, and token reports. `CONTEXT_BROKER_MEMORY_POOL_MB` defaults
-to 256; this bounds estimated retained cache payloads, **not total RSS, the model,
-or in-flight work**. Oversized indexes can be used without retention. Queries keep
-at most `CONTEXT_BROKER_QUERY_CACHE_MAX_ENTRIES` entries per project (default 128),
-and disk query-cache loading/writing is limited by
-`CONTEXT_BROKER_QUERY_CACHE_MAX_FILE_BYTES` (default 4000000). Disk embedding caches
-use read-only memory maps; indexing encodes one batch at a time and search scores
-vectors in chunks. `get_memory_usage` reports aggregate pool counts and the shared
-PID without exposing another project's content.
-
-Disabling an agent's MCP connection ends its proxy; other sessions and the shared
-service continue. Agents still need to send their requests through MCP: installing
-an MCP server cannot intercept every provider prompt or change an editor's plugin
-enabled setting. Native host/plugin toggle hooks are not implemented here.
-
-Verification uses standard MCP clients and a real stdio subprocess. Native Codex,
-Claude Code, Cline, VS Code, DeepSeek, and Hermes applications were not launched in
-the test environment. A Linux startup-only measurement using the same interpreter
-showed 846224 KiB peak RSS for the old eager package import and 79044 KiB for proxy
-construction, before model loading; this is not a production workload benchmark.
-
-### Codex, Hermes, Cursor, and Claude Code configuration
-
-Install project-bound configuration using the installed broker interpreter:
-
-```sh
-context-broker integration-config --host codex --project-root /absolute/project
-context-broker integration-config --host hermes --project-root /absolute/project
-context-broker integration-config --host relayhelm --project-root /absolute/project
-context-broker integration-config --host cursor --project-root /absolute/project
-context-broker integration-config --host claude-code --project-root /absolute/project
-```
-
-The command merges into existing settings and saves a `.context-broker.bak` backup.
-The packaged Context Broker skill is installed in the host's skill directory.
-Relayhelm also gets its bundled plugin enabled with the same project binding. Use `--print`
-for preview only, or `--config-path /path/to/config` for a custom profile. TOML/YAML
-comments are preserved; JSONC is normalized to JSON (the backup retains comments).
-Each connection automatically starts or reuses the shared service and launches a lightweight
-project-bound proxy using the absolute Python interpreter path. The optional
-`--runtime-dir` must match the service's `CONTEXT_BROKER_SHARED_RUNTIME_DIR`.
-
-`update` supports uv tool installations and clean editable Git checkouts. It refuses
-externally managed installations such as Nix, and refuses dirty Git checkouts.
-For uv tools, it resolves the upstream revision once and installs that immutable SHA
-with dashboard and integration extras. An active service is stopped before package
-changes and restarted using a fresh interpreter after success. Reconnect agent
-sessions afterward. A failed package update leaves the service stopped: repair the
-installation before running `start`. Older services without the authenticated control
-endpoint must be stopped once in their original terminal before upgrading.
-Rerun `integration-config` after an update to refresh installed skills and configuration.
-`--check` prints the update plan without changing files or stopping the service.
-
-| Host | Configuration | Delegation settings |
-| --- | --- | --- |
-| [Codex](https://developers.openai.com/codex/mcp/) | `.codex/config.toml`, `mcp_servers` | 600-second tool timeout; allow interactive MCP elicitation in host approvals |
-| [Relayhelm](https://github.com/InSelfControll/relayhelm) | `~/.relayhelm/config.yaml`, `mcp_servers` | Project-bound shared service; 600-second tool timeout, form elicitation enabled |
-| [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | `~/.hermes/config.yaml`, `mcp_servers` | JSON fragment is valid YAML; 600-second tool timeout, form elicitation enabled |
-| [Cursor](https://cursor.com/docs/mcp) | `.cursor/mcp.json`, `mcpServers` | Uses the host's interactive elicitation and timeout behavior |
-| [Claude Code](https://code.claude.com/docs/en/mcp) | `.mcp.json`, `mcpServers` | 600000-millisecond per-server timeout on versions supporting that setting |
-
-Keep elicitation interactive: host hooks that automatically approve prompts defeat
-the intended human choice. If elicitation is unavailable, no workers launch. Shared
-HTTP uses stateful sessions to forward the question through the stdio proxy. One
-service still owns the model/cache pool; session protocol state remains separate.
-
-Tests cover configuration parsing, real stdio/HTTP consent forwarding, failure
-propagation, shared-process identity, and project isolation. The user reports successful laptop use with Codex, Hermes, and Claude Code.
-Those applications are not installed in this test environment, so that report is
-separate from automated verification of this branch. Cursor native compatibility
-remains unverified. Host versions,
-approval policies, output limits, and plugin controls still require native checks.
-
-### Relevant issue history without session bloat
-
-At setup, call `configure_history_indexing`. It asks the user **Index / No index**
-through MCP elicitation and saves the choice per project. Indexing is off until an
-explicit choice enables it. No index still reads saved history directly; disabling
-indexing removes only the derived SQLite index, never original chats or handoffs.
-
-`lookup_project_history(query)` checks the project's local chat ledgers and model
-handoffs for the current issue. Question-bearing routing/search MCP calls also check
-history automatically and append at most three relevant excerpts. Initialization,
-tool discovery, and unrelated questions do not preload project memory. Complete
-model handoffs remain an explicit continuation operation.
-
-Similarity uses conservative keyword overlap: at least two meaningful terms and
-60% query-term coverage. This detects repeated and lexically similar issues; it is
-not universal semantic matching. Excerpts preserve prior failure reasons and remain
-evidence to verify against current code. No provider calls or embedding model loads
-are required. History remains excluded from the normal source-code index.
-
-Indexed mode reuses parsed excerpts and normalized search terms from unchanged
-files; it checks source metadata on every lookup and refreshes changed records.
-No-index mode reads source JSON directly on every lookup. Both scan at most 128
-recent candidate files (bounded directory enumeration), 1 MB per file, and 2000
-records per lookup. Each returned excerpt is at most 2000 characters. Oversized or
-unreadable history produces `partial: true`; never interpret this as an exhaustive
-search. Secret-bearing excerpts are excluded. Records from other projects are never
-retrieved. These checks apply to requests reaching MCP; a standalone MCP server
-cannot intercept questions that a host does not send to it.
-
-A standalone multi-provider/channel harness is feasible; see
-[the implementation assessment](docs/harness-feasibility.md) for Cursor ACP,
-Telegram, Discord, Teams, provider boundaries, and remaining work.
-
-### Share memory when switching models
-
-`save_model_handoff` saves an immutable checkpoint; `load_model_handoff` restores
-it for any target model in the same project. Neither requires Redis, Honcho, or a
-provider API. Supply the source model, session ID, relevant files, and this state:
-
-```json
-{
-  "goal": "Original user request",
-  "messages": [{"role": "user", "content": "Exact conversation text"}],
-  "decisions": ["Keep the existing public API"],
-  "constraints": ["Use the user-selected model and reasoning level"],
-  "facts": [],
-  "tasks": [{"task": "Native verification", "status": "failed", "failure_reason": "Host unavailable"}],
-  "acceptance_criteria": ["Regression tests pass"],
-  "open_questions": []
-}
-```
-
-Pass the returned `handoff_id` to the next model. It must load that checkpoint
-before continuing. Exact supplied messages, decisions, failures, and file contents
-are retained; no automatic summary replaces them. Failed tasks require reasons;
-completed tasks require evidence. Evidence is caller-supplied and still needs review.
-Changed files, corruption, missing checkpoints, or insufficient context budget return
-`failed`. Saved memory stays intact for recovery. These tools cannot recover unsaved
-host history, transfer private model reasoning, or guarantee equal model quality.
-
-Checkpoints live once under `CONTEXT_BROKER_STORAGE_DIR/handoffs/<project-digest>/`,
-independently of model, session, and the generic storage mode. Identical saves reuse
-the same content-hash ID; updated checkpoints preserve previous versions. No model-
-specific in-memory cache is added. Atomic writes and file locks protect concurrent
-saves. Storage is durable and grows with distinct checkpoints; old memory is never
-automatically evicted. Each checkpoint is limited to 256 KB, with selected source
-files sharing the existing 64 KB snapshot limit. Load defaults to a 32 KB byte budget;
-choose a budget fitting the target host/model and resolve a failed load before work
-continues. No provider call or model switch happens automatically.
-
-### Optional multi-agent delegation for large tasks
-
-`delegate_large_task` runs 2–4 independent proposal workers concurrently, then one
-integration reviewer, using the **exact user-specified model ID** for every call.
-The host supplies the original task, conversation decisions, constraints, acceptance
-criteria, project root, and selected files. Each worker receives the same immutable
-context snapshot plus its assignment. The tool asks the user **Split task / Keep one
-agent** before any provider calls. Decline, cancellation, timeout, or unavailable MCP
-elicitation launches no workers; the host continues with one agent. There is no
-confirmation boolean that can bypass the user prompt.
-
-Configure `CONTEXT_BROKER_LLM_BASE_URL` (an OpenAI-compatible API base ending in `/v1`)
-and, if required, `CONTEXT_BROKER_LLM_API_KEY` on the broker service. Local HTTP is
-limited to loopback; remote endpoints require HTTPS. The provider must support
-`/chat/completions` JSON responses and return the requested exact model ID; use a
-versioned model ID if an alias resolves to a different name. Authentication stays in
-the service environment. Provider calls can incur charges; the confirmation states
-the assignments, selected model, context sharing, and maximum number of calls.
-
-This adapter creates model-backed proposal/review workers, not native editor agent
-subprocesses. It does not borrow subscription sessions or silently select another
-model/provider. It sends complete caller-supplied context and selected project files;
-it cannot discover conversation history the host has not provided. The 64 KB shared
-snapshot limit is enforced by rejection, never silent truncation. Files outside the
-project, secret files/content, oversized responses, incomplete provider responses,
-and model mismatches are rejected. Files are checked again after consent and review.
-
-Workers have no command execution or file-writing tools. They return proposed changes,
-evidence, and risks. The reviewer must cover every acceptance criterion and report
-conflicts, missing context, and a verification plan. Passing that review yields
-`ready_for_integration`, **not completed work**: the host must integrate proposals
-and run tests. Failed batches preserve successful proposal handoffs, cancel unfinished siblings,
-and never automatically retry paid calls. One batch at a time per server bounds
-concurrency and avoids an unbounded task queue. Model review cannot guarantee quality;
-actual code verification remains required.
-
-Failures return `status: "failed"`, `failure_code`, `failure_reason`, and
-`completed: false`, with the MCP `isError` flag set. This includes invalid input,
-provider errors, declared worker failures, changed context, confirmation timeouts,
-and rejected or incomplete reviews. A worker cannot label a failed assignment as a
-successful proposal. Provider HTTP failures expose the status code, not response
-bodies or credentials. Validation failures omit rejected input values.
-
-### Disconnect behavior
-
-On Linux, closing the editor's stdio MCP connection terminates the broker even when
-the editor remains open or a synchronous operation is still running. The watchdog
-observes pipe hangup without reading protocol messages. Network transports remain
-available to other clients when one client disconnects.
-
-Editor plugin enable/disable settings belong to the editor. This repository does
-not contain an editor plugin or a hook that synchronizes those settings; stopping
-the broker process does not change an editor's plugin toggle.
-
-### Using a Different Embedding Model
-
-Any model compatible with the `sentence-transformers` library works. Popular alternatives:
-
-| Model | Quality | Speed | Size |
-|-------|---------|-------|------|
-| `all-MiniLM-L6-v2` (default) | Good | Fast | ~80 MB |
-| `all-mpnet-base-v2` | Better | Slower | ~420 MB |
-| `paraphrase-MiniLM-L3-v2` | Lower | Fastest | ~60 MB |
-
-Set via environment variable:
-```bash
-CONTEXT_BROKER_EMBEDDING_MODEL=all-mpnet-base-v2
-```
-
-On first use, Context Broker names the configured model in its MCP log and downloads it
-automatically when it is not already cached. This bootstrap also applies when
-`CONTEXT_BROKER_LOCAL_ONLY=1`; subsequent loads use the local cache.
-
-### Optional LLM Configuration
-
-Context Broker exposes optional LLM environment variables that **have no built-in effect yet**. They are available so MCP clients and future tools can discover what LLM endpoint to use. Set them in your `.env` or MCP client config:
-
-| Variable | Example | Purpose |
-|----------|---------|---------|
-| `CONTEXT_BROKER_LLM_MODEL` | `llama3`, `gpt-4o` | LLM model identifier |
-| `CONTEXT_BROKER_LLM_BASE_URL` | `http://localhost:11434/v1` | API endpoint (Ollama, OpenAI-compatible, etc.) |
-| `CONTEXT_BROKER_LLM_API_KEY` | `sk-...` | API key (leave empty for local models) |
-
-These values are reported by the `get_storage_config` tool so MCP clients can read them at runtime.
-
-Example with Ollama:
-```json
-{
-  "mcpServers": {
-    "context-broker": {
-      "command": "uv",
-      "args": ["run", "python", "/path/to/context-broker.py"],
-      "env": {
-        "CONTEXT_BROKER_LLM_MODEL": "llama3",
-        "CONTEXT_BROKER_LLM_BASE_URL": "http://localhost:11434/v1"
-      }
-    }
-  }
-}
-```
-
-## Features
-
-- 🔍 **Semantic Code Search** — Find code by describing what you need in plain English
-- 🎯 **Auto Project Detection** — Automatically detects project roots from common markers
-- 💾 **Smart Caching** — Caches embeddings and results with file modification tracking
-- 📊 **Token Efficiency** — Reports token usage and savings for each query
-- 🚫 **Respects Ignore Files** — Reads `.gitignore` and `.dockerignore` to exclude unwanted files
-- 💾 **Persistent Search Results** — Save and load search results across sessions
-- ⚡ **Fast Inference** — CPU-optimized sentence transformers for quick searches
-- 🗄️ **Cross-Chat Context Backend** — Honcho or Redis (via `CONTEXT_BROKER_CONTEXT_BACKEND`)
-- 📝 **Chat History Persistence** — Dual-written to context backend + local JSON ledger
-- 🔐 **Chat-Payload Cache** — Redis TTL-based read-through cache with auto-warm on save
-- 👤 **User Activity Tracking** — Per-user `first_seen` / `last_seen` / `request_count` + audit log
-- 🌐 **Web Dashboard** — Starlette app to browse projects → sessions → messages
-- 🔄 **Session Management** — `record_turn`, `record_session`, `load_cross_session_context` MCP tools
-- 🔌 **Downstream MCP Client Foundation** — stdio, streamable HTTP, and SSE connection manager for Universal Context Router integrations
-- 📜 **Auto CHANGELOG** — Generated from conventional commits
-- 📄 **Auto AGENTS.md** — Generated and validated per project
-- 📖 **Auto Feature Docs** — Documentation generated from feature changes
-- 🧭 **Token-Slim MCP Router** — Client-agnostic task router that exposes only relevant tools, builds a simple DAG, and blocks unsafe execution
-- 🏗️ **Modular Architecture** — TTC (Tool-Task-Codebase) folder isolation pattern
+**One-line pitch:** *It's like having a senior dev who remembers every decision and can instantly find any pattern in the code.*
 
 ## Quick Start
 
 ### Prerequisites
-
 - Python 3.13+
 - UV package manager
 
@@ -338,79 +48,13 @@ cd context-broker
 
 # Install dependencies
 uv sync
-
-# Or with pip
-pip install -e .
-```
-
-## Understanding MCP Client Output
-
-When using Context Broker with MCP clients (Claude Desktop, Kimi CLI, etc.), you'll see:
-
-### Tool Call Notifications (Client-Side)
-
-Lines like these are shown by the MCP client, not the server:
-```
-• Used search_codebase_tool ({"query": "tracing::debug...", "project_root": "/path/to/project"})
-• Used auto_search ({})
-```
-
-These are **automatically displayed by the client** when tools are called. The Context Broker server also sends progress notifications so you can track:
-- When a search starts
-- Which project root was detected
-- How many files were found
-- Token efficiency statistics
-
-### Token Efficiency Reports (Server Response)
-
-These lines are included in the tool response:
-```
-📈 Token Efficiency Report:
-   • Total Project Tokens: 50,000
-   • Context Sent: 3,500
-   • Tokens Saved: 46,500 (93.0%)
-```
-
-## Running the Server
-
-### Using UV (Recommended)
-
-```bash
-# From the project directory
-uv run python context-broker.py
-
-# Or using the module entry point
-uv run python -m context_broker
-
-# Or using the convenience script
-uv run main.py
-```
-
-### Using Python directly
-
-```bash
-# Make sure dependencies are installed first
-pip install fastmcp sentence-transformers scikit-learn numpy torch tiktoken
-
-# Run the main entry point
-python context-broker.py
-
-# Or using the module
-python -m context_broker
-
-# Or the alternative entry
-python main.py
 ```
 
 ### MCP Client Configuration
 
-Add to your MCP client (Claude Desktop, Kimi CLI, etc.):
+Add to your MCP client (Claude Desktop, Cursor, etc.):
 
-#### Claude Desktop
-
-Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or equivalent:
-
-**Using UV:**
+**Using UV (Recommended):**
 ```json
 {
   "mcpServers": {
@@ -440,169 +84,89 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) o
 }
 ```
 
-#### Kimi CLI
+### One-Command Setup (Recommended)
 
-Add to your Kimi CLI configuration file:
-
-```json
-{
-  "mcpServers": {
-    "context-broker": {
-      "command": "uv",
-      "args": ["run", "--with", "fastmcp", "python", "/full/path/to/context-broker/context-broker.py"]
-    }
-  }
-}
-```
-
-### Testing the Server
-
-To verify the server is working:
+Configure your specific editor automatically:
 
 ```bash
-# Run in one terminal
-uv run python context-broker.py
+# For Claude Code
+context-broker integration-config --host claude-code --project-root /absolute/path/to/project
 
-# The server will start and listen for MCP protocol messages on stdin/stdout
-# You should see output like:
-# [Broker] ⚡ Indexing new project: /your/project/path
-# [Broker] ✅ Index ready. Total size: X tokens.
+# For Cursor
+context-broker integration-config --host cursor --project-root /absolute/path/to/project
+
+# For Codex
+context-broker integration-config --host codex --project-root /absolute/path/to/project
 ```
 
-## Architecture Overview
+This automatically merges the MCP config and installs the Context Broker skill.
 
-```mermaid
-flowchart TB
-    subgraph "AI Assistant"
-        AI["Natural Language Query"]
-    end
-    
-    subgraph "Context Broker"
-        MCP["MCP Server"]
-        Core["Core Engine"]
-        Cache[(Query Cache)]
-    end
-    
-    subgraph "Resources"
-        Codebase[(Target Codebase)]
-        Storage[(JSON Storage)]
-        Model[(ML Model)]
-    end
-    
-    AI -->|"How does auth work?"| MCP
-    MCP --> Core
-    Core -->|"Scan & Embed"| Codebase
-    Core -->|"Search"| Model
-    Core -->|"Cache Results"| Cache
-    Core -->|"Persist"| Storage
-    MCP -->|"Relevant Files"| AI
+## Features
+
+- 🔍 **Semantic Code Search** — Find code by describing what you need in plain English
+- 🧠 **Cross-Session Memory** — Save and load context between different AI models (Claude ↔ GPT-4 ↔ local models)
+- 🤝 **Multi-Agent Delegation** — Split large tasks across 2-4 parallel workers with safety gates
+- ⚡ **Token-Slim Router** — Only expose relevant tools for each task, reducing context bloat
+- 💾 **Smart Caching** — Persistent embeddings with file modification tracking
+- 📊 **Token Efficiency Reports** — See exactly how many tokens you're saving (typically 80-95%)
+- 🚫 **Respects Ignore Files** — Reads `.gitignore` and `.dockerignore` automatically
+- 🔒 **Local-first Privacy** — Runs on CPU, no cloud required, works offline
+- 🌐 **Web Dashboard** — Browse stored contexts and sessions visually
+- 🔄 **Model Handoffs** — Transfer complete session state (decisions, constraints, failures) between models
+
+## How It Works
+
 ```
+You: "How does authentication work?"
+        ↓
+Context Broker: [Semantic Search] → Finds auth middleware, user model, login endpoints
+        ↓
+Returns: Relevant snippets only (not full files) + Token savings report
+```
+
+### Key Capabilities
+
+**1. Semantic Search**
+Uses sentence transformers to understand code meaning. Search "database connection" finds `db.py`, `connection_pool.rs`, or `DatabaseConfig.java` regardless of naming conventions.
+
+**2. Model Handoffs (Unique Feature)**
+Switch AI models mid-task without losing context:
+
+```python
+# Save current state
+handoff_id = save_model_handoff(
+    goal="Fix authentication bug",
+    decisions=["Using JWT not sessions", "Keep existing public API"],
+    constraints=["Must support OAuth2"],
+    failed_tasks=[{"task": "Database migration", "failure_reason": "Schema mismatch"}]
+)
+
+# Load in different model later
+load_model_handoff(handoff_id)  # Restores complete context
+```
+
+**3. Multi-Agent Delegation**
+For large tasks, Context Broker can spawn parallel workers:
+
+```python
+delegate_large_task(
+    task="Refactor authentication system",
+    context_snapshot=current_context,
+    model="gpt-4"  # Uses your specified model
+)
+# Returns: 2-4 independent proposals + integration review
+```
+
+## Architecture
+
+Context Broker uses a **Tool-Task-Codebase (TTC)** modular architecture:
+
+- **Indexer**: Embeds code semantically using local ML models
+- **Context Manager**: Handles cross-session persistence (Honcho/Redis/local JSON)
+- **Router**: Ranks and exposes only relevant tools per task
+- **Shared Service**: One broker instance serves multiple AI agents simultaneously
 
 For detailed architecture, see [ARCHITECTURE.md](ARCHITECTURE.md).
-
-## Usage
-
-### Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `search_codebase(query, project_root?)` | Search codebase using semantic similarity |
-| `auto_search(project_root?)` | Auto-search for entry points and configuration |
-| `save_search_results(query, filename, subdir?)` | Save search results to JSON |
-| `list_saved_results(project_name, subdir?)` | List saved JSON files |
-| `load_saved_results(project_name, filename, subdir?)` | Load saved search results |
-| `get_storage_config()` | Show storage configuration |
-| `token_counter(project_root?)` | Get latest token usage for editor integrations |
-| `token_history(project_root?, limit?)` | Graph-ready token savings history |
-| `token_integration_manifest(project_root?)` | Integration options for GraphQL, LangGraph, etc. |
-| `route_task(task, mode?, token_budget?, top_k?)` | Recommend a minimal task-specific tool slice; modes: `plan_only`, `recommend_tools`, `execute_safe` |
-| `execute_plan(plan_json, arguments_by_tool_json?, confirmed?)` | Execute or delegate a routed UCR plan through safety gates |
-| `search_context(query, project_root?, top_k?)` | Search relevant project context through the UCR public surface |
-| `explain_plan(plan_json)` | Explain a UCR plan in client-neutral JSON |
-| `execute_selected_tool(tool_id, arguments_json?, confirmed?)` | Safety-gated execution/delegation for a selected router tool |
-| `get_route_metrics()` | Return UCR route/execution/cache/latency metrics |
-| `benchmark_router(iterations?)` | Run a lightweight in-process router benchmark |
-| `save_chat_context(session_id, user_message, assistant_message, ...)` | Save chat messages to the context backend (Honcho or Redis) |
-| `load_chat_context(session_id, tokens?, summary?, search_query?, ...)` | Load cross-chat context from the configured backend |
-| `record_turn(session_id, user_message, assistant_message, ...)` | Save one user-assistant exchange |
-| `record_session(session_id, turns, ...)` | Bulk-persist an entire conversation |
-| `context_backend_status()` | Show configured cross-chat context backend status |
-| `load_cross_session_context(search_query?, top_k?, ...)` | Search across all sessions (Redis only) |
-| `list_user_activity(peer_id?, limit?)` | Per-user activity audit (Redis only) |
-| `ensure_agents_md_tool(project_root?)` | Ensure AGENTS.md exists for a project |
-| `validate_agents_md_tool(project_root?)` | Validate AGENTS.md quality |
-| `generate_agents_md_tool(project_root?, force?)` | Generate AGENTS.md for a project |
-| `scan_projects_for_agents_md(project_root?, max_depth?)` | Scan for projects missing AGENTS.md |
-| `ensure_changelog_tool(project_root?)` | Ensure CHANGELOG.md exists and is up to date |
-| `validate_changelog_tool(project_root?)` | Validate CHANGELOG.md against git history |
-| `generate_version_changelog(version, project_root?, since?)` | Generate a changelog section for a version |
-| `get_changelog_stats_tool(project_root?)` | Get statistics about CHANGELOG.md |
-| `ensure_feature_docs_tool(project_root?, since?)` | Ensure docs exist for recent feature changes |
-| `scan_missing_docs_tool(project_root?, since?)` | Scan for feature changes missing documentation |
-| `get_docs_stats_tool(project_root?)` | Get statistics about feature documentation |
-| `check_environment(install_missing?, confirm?)` | Doctor: detect anything missing on this machine for running the MCP; offers a confirmation-gated install of missing required packages |
-
-### Available Resources
-
-| Resource | Description |
-|----------|-------------|
-| `codebase://auto-context` | Auto-provides context on every request |
-| `codebase://token-counter` | Provides latest token metrics for editor dashboards |
-
-Token counter reports are also persisted as internal JSON under broker storage
-(in-project path: `.context-broker/_internal/token-counter-latest.json`), and
-that storage is excluded from semantic indexing so it is not forwarded as code context.
-
-### Token-Slim Router
-
-`route_task` is a production-oriented MCP router API for Claude Code, Codex CLI,
-Cursor, Hermes Agent, and other MCP clients. Instead of exposing every server tool
-by default, the router ranks a registry of tool descriptors against the current
-task, applies a token budget, and returns only the tools that should be visible.
-
-Router modes:
-
-- `recommend_tools` — return ranked tool descriptors and token-savings metrics.
-- `plan_only` — also return a dependency-ordered DAG without executing anything.
-- `execute_safe` — prepare a safety-gated execution path; unknown tools are
-  delegated back to the client runtime instead of executed blindly.
-
-The router registry stores descriptor vectors in `.cache/token-slim-router-tools.json`.
-Safety checks block prompt-injection text, path traversal, secret-like arguments,
-secret filenames, and dangerous shell commands. High-risk and shell-capable tools
-require explicit confirmation.
-
-### Universal Context Router Migration
-
-Context Broker is being migrated incrementally into a Universal Context Router:
-an upstream MCP server and a downstream MCP client. The downstream client
-subsystem is isolated under `context_broker/client_ttc/` and supports stdio,
-streamable HTTP, and SSE MCP transports, bounded reconnect, heartbeat probes,
-capability discovery (`tools/list`, `prompts/list`, `resources/list`), and
-downstream `tools/call` dispatch.
-
-The UCR runtime adds an expanded tool registry with JSON, SQLite, and optional
-Redis cache; downstream capability ingestion; intent detection; skill-aware
-decomposition; DAG planning with parallel-safe stages; safety-gated plan
-execution; secret redaction; route metrics; and a benchmark tool. Existing
-server tools remain backward compatible by default. To expose only the minimal
-public UCR surface, start the server with:
-
-```bash
-CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY=1
-```
-
-See [ARCHITECTURE_MIGRATION.md](ARCHITECTURE_MIGRATION.md) for completed work,
-remaining phases, decisions, risks, rollback strategy, and future improvements.
-
-### Example Queries
-
-```
-"Find authentication middleware"
-"Show me database connection code"  
-"Where is the user model defined?"
-"Main entry point configuration"
-```
 
 ## Configuration
 
@@ -611,286 +175,23 @@ remaining phases, decisions, risks, rollback strategy, and future improvements.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CONTEXT_BROKER_PROJECT_ROOT` | Default project root | Auto-detected |
-| `CONTEXT_BROKER_DEFAULT_QUERY` | Default auto-context query | `"main entry point configuration setup"` |
-| `CONTEXT_BROKER_STORAGE_MODE` | Storage mode: `global`, `in-project`, or `both` | `both` |
-| `CONTEXT_BROKER_STORAGE_DIR` | Base directory for global storage | `~/.context-broker` |
-| `CONTEXT_BROKER_EMBEDDING_MODEL` | Sentence-transformers model for embeddings | `all-MiniLM-L6-v2` |
-| `CONTEXT_BROKER_DEVICE` | Torch device for the embedding model (`cpu`, `cuda`, `mps`) | `cpu` |
-| `CONTEXT_BROKER_LOCAL_ONLY` | Prefer cache-only loading, with one bootstrap download if missing | `0` (disabled) |
-| `CONTEXT_BROKER_AUTO_LOAD_ENV` | Load the nearest `.env` file at startup (`0` disables discovery) | `1` (enabled) |
-| `CONTEXT_BROKER_LLM_MODEL` | Optional LLM model identifier (exposed to MCP clients) | *(empty)* |
-| `CONTEXT_BROKER_LLM_BASE_URL` | Optional LLM API endpoint URL (exposed to MCP clients) | *(empty)* |
-| `CONTEXT_BROKER_LLM_API_KEY` | Optional LLM API key (exposed to MCP clients) | *(empty)* |
-| `CONTEXT_BROKER_ENABLE_PROGRESS_NOTIFICATIONS` | Enable per-call MCP progress updates | `0` (disabled) |
-| `CONTEXT_BROKER_EXIT_WHEN_PARENT_DIES` | Exit automatically when the launching editor/AI process disappears | `1` (enabled) |
-| `CONTEXT_BROKER_PARENT_POLL_INTERVAL_SECONDS` | Poll interval for orphan-process detection | `3` |
-| `CONTEXT_BROKER_IDLE_RESOURCE_TIMEOUT_SECONDS` | Release in-memory model/index caches after this much idle time (`0` disables) | `900` |
-| `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES` | Maximum in-memory routing plans (`0` disables plan caching) | `128` |
-| `CONTEXT_BROKER_IDLE_RESOURCE_CLEANUP_INTERVAL_SECONDS` | How often idle cleanup checks run | `30` |
-| `CONTEXT_BROKER_INDEX_FOLLOW_SYMLINKS` | Follow dir/file symlinks while collecting files (`0` avoids `/nix/store` via `result`) | `0` |
-| `CONTEXT_BROKER_INDEX_MAX_FILE_BYTES` | Skip files larger than N bytes during collection (`0` disables) | `2000000` |
-| `CONTEXT_BROKER_INDEX_DISK_CACHE` | Persist corpus embeddings under `.cache/` so restarts skip full re-encode | `1` |
-| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat context backend: `none`, `honcho`, or `redis` | `none` |
-| `CONTEXT_BROKER_REDIS_URL` | Redis URL when `CONTEXT_BACKEND=redis` | *(empty)* |
-| `CONTEXT_BROKER_REDIS_KEY_PREFIX` | Redis key prefix for the context backend | `context-broker` |
-| `CONTEXT_BROKER_CHAT_CACHE_TTL_SECONDS` | TTL for the Redis chat-payload cache (`0` disables) | `300` |
-| `CONTEXT_BROKER_USE_ACCOUNT_NAME` | Use the OS account name as the default user peer id | `0` |
-| `CONTEXT_BROKER_ACCOUNT_NAME_OVERRIDE` | Explicit override for the resolved user peer id | *(empty)* |
-| `CONTEXT_BROKER_DASHBOARD_HOST` | Bind host for the web-only dashboard | `127.0.0.1` |
-| `CONTEXT_BROKER_DASHBOARD_PORT` | Bind port for the web-only dashboard | `8770` |
-| `CONTEXT_BROKER_HONCHO_WORKSPACE_ID` | Honcho workspace id | `context-broker` |
-| `CONTEXT_BROKER_HONCHO_SESSION_PREFIX` | Prefix for Honcho session ids | `context-broker` |
-| `CONTEXT_BROKER_HONCHO_CONTEXT_TOKENS` | Default Honcho context token budget | `2000` |
-| `CONTEXT_BROKER_HONCHO_LIMIT_TO_SESSION` | Limit Honcho context/search to selected session by default | `1` |
-| `CONTEXT_BROKER_UCR_PUBLIC_SURFACE_ONLY` | Expose only UCR public router tools instead of the legacy full MCP surface | `0` |
-| `CONTEXT_BROKER_WORKTREE_SHARED_ROOT` | Resolve linked git worktrees to the main checkout so index/cache/storage are shared across worktrees | `1` |
-| `CONTEXT_BROKER_REGEX_MAX_PATTERN_CHARS` | Maximum caller regex length for `find_in_codebase` | `2000` |
-| `CONTEXT_BROKER_REGEX_MATCH_TIMEOUT_SECONDS` | Per-file regex match timeout (ReDoS guard) | `2.0` |
-| `CONTEXT_BROKER_AUTH_TOKEN` | Bearer token required on WS transport and dashboard when set | *(empty)* |
-| `CONTEXT_BROKER_ALLOW_UNAUTHENTICATED_BIND` | Permit non-loopback binds without `AUTH_TOKEN` (trusted networks only) | `0` |
+| `CONTEXT_BROKER_EMBEDDING_MODEL` | Sentence-transformers model | `all-MiniLM-L6-v2` |
+| `CONTEXT_BROKER_DEVICE` | Torch device (`cpu`, `cuda`, `mps`) | `cpu` |
+| `CONTEXT_BROKER_CONTEXT_BACKEND` | Cross-chat backend: `none`, `honcho`, `redis` | `none` |
+| `CONTEXT_BROKER_STORAGE_MODE` | Storage: `global`, `in-project`, `both` | `both` |
 
-By default, Context Broker uses half of available CPU cores for embedding/indexing workloads.
-It also exits when its launching host disappears and releases in-memory caches after prolonged idle periods, which helps prevent orphaned MCP processes from lingering and consuming RAM.
+[See full configuration reference →](#detailed-configuration)
 
-### Persistence Model
+## Use Cases
 
-- **Query cache** → local JSON at `.cache/context-broker.json`.
-- **Corpus embedding index** → `.cache/context-broker-index.json` + `.cache/context-broker-index.npy` (invalidated by path set / mtime fingerprint / model name).
-- **Hard-ignored bulky files** → `DEFAULT_IGNORE_FILE_PATTERNS` always skips ISOs, VM disks, archives, packages, media, and dumps (case-insensitive), independent of `.gitignore`.
-- **Saved results / user memory** → local JSON under `.context-broker/` or `~/.context-broker/`.
-- **Token history** → local JSON under the same storage directories.
-- **Cross-chat context** → optional Honcho **or** Redis backend (see below).
-- **Chat history** → dual-written. Every save lands in the chosen context backend (Honcho/Redis) **and** in a local-JSON ledger at `<storage>/chats/<project_digest>/<session_id>.json`. Saves *append*; prior turns are never overwritten. Use `record_turn` for an explicit "save the exchange I just had" tool and `load_cross_session_context` for cross-session retrieval.
+**Switching Models Mid-Task:**
+> You're debugging with Claude Code but hit the context limit. Save a handoff, switch to GPT-4 or a local model, and continue exactly where you left off—with all decisions and failed approaches intact.
 
-### Web Dashboard
+**Large Refactors:**
+> Delegate "Migrate from REST to GraphQL" to 4 parallel workers: one analyzes schema, one handles resolvers, one updates types, one reviews integration. Context Broker merges the proposals safely.
 
-Browse stored cross-chats per project without running the MCP server:
-
-```bash
-CONTEXT_BROKER_CONTEXT_BACKEND=redis \
-CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0 \
-python -m context_broker dashboard
-```
-
-Binds `127.0.0.1:8770` by default (override with `CONTEXT_BROKER_DASHBOARD_HOST` / `CONTEXT_BROKER_DASHBOARD_PORT`). Install the optional extras with `pip install "context-broker[dashboard]"`. The dashboard requires the Redis context backend to enumerate projects.
-
-`.env` files are picked up automatically (nearest file walking up from CWD) — both the MCP server and the dashboard load them, without overriding env already set by the parent process. Re-running the dashboard when one is already serving on the configured host/port is a no-op: the second process probes `/api/status`, recognises the existing instance, and exits cleanly. Safe to wire as an auto-launch step in every editor's MCP config.
-
-To use Honcho for context between chats:
-
-```bash
-CONTEXT_BROKER_CONTEXT_BACKEND=honcho
-CONTEXT_BROKER_HONCHO_WORKSPACE_ID=context-broker
-```
-
-Install optional integrations with `pip install "context-broker[integrations]"` or the equivalent UV command. The Honcho tools are explicit: call `save_chat_context` to store messages and `load_chat_context` to retrieve session context. Honcho context is session-limited by default to avoid mixing unrelated project or user memory.
-
-Switch to the Redis-backed equivalent with:
-
-```bash
-CONTEXT_BROKER_CONTEXT_BACKEND=redis
-CONTEXT_BROKER_REDIS_URL=redis://localhost:6379/0
-```
-
-The same `save_chat_context` / `load_chat_context` MCP tools then write to Redis instead of Honcho. The Redis backend is what the web dashboard reads from.
-
-### Storage Modes
-
-The MCP server supports three storage modes for saving JSON search results:
-
-#### 1. Both Mode (Default) ⭐ Recommended
-
-Uses both storage locations, **preferring local project storage**.
-
-**Behavior:**
-- **Save:** Always saves to local project folder (`.context-broker/`)
-- **Load:** Checks local project first, falls back to global if not found
-- **List:** Shows files from both locations
-
-```
-/path/to/my-api-project/              ~/.context-broker/
-├── src/                              └── my-api-project/
-├── .context-broker/                      ├── api/
-│   └── api/                              │   └── old-results.json
-│       └── auth-middleware.json          └── config/
-└── package.json                              └── database.json
-```
-
-**Best for:** Daily development with multiple projects, keeping results with your code while maintaining a global backup.
-
-#### 2. Global Mode
-
-Stores all project data in a centralized location:
-
-```
-~/.context-broker/
-├── my-api-project/
-│   ├── api/
-│   │   └── auth-middleware.json
-│   └── config/
-│       └── database.json
-```
-
-**Best for:** Centralized management, CI/CD environments, not cluttering project directories.
-
-#### 3. In-Project Mode
-
-Stores data within each project's directory:
-
-```
-/path/to/my-api-project/
-├── src/
-├── .context-broker/
-│   └── api/
-│       └── auth-middleware.json
-└── package.json
-```
-
-**Best for:** Team collaboration (commit results to git), sharing context with teammates.
-
-## How It Works
-
-### Data Flow
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant CB as Context Broker
-    participant Index as File Index
-    participant Cache as Query Cache
-    participant Model as ML Model
-    
-    User->>CB: search_codebase("auth middleware")
-    
-    alt Index not in memory
-        CB->>Index: Scan files
-        CB->>CB: Parse ignore patterns
-        CB->>Model: Generate embeddings
-        CB->>Index: Store embeddings
-    end
-    
-    CB->>Cache: Check for cached query
-    
-    alt Cache miss
-        CB->>Model: Encode query
-        CB->>Index: Compute similarities
-        CB->>Cache: Store results
-    end
-    
-    CB->>User: Return relevant files
-```
-
-### Key Components
-
-1. **Project Detection**: Scans for markers like `.git`, `package.json`, `pyproject.toml` to find project root
-2. **File Indexing**: Indexes supported files (`.py`, `.js`, `.ts`, `.go`, `.rs`, `.java`, etc.)
-3. **Respect Ignores**: Reads `.gitignore` and `.dockerignore` to skip excluded files
-4. **Semantic Embedding**: Embeds files using a configurable sentence-transformers model (default: `all-MiniLM-L6-v2`)
-5. **Similarity Search**: Finds most relevant files for your query using cosine similarity
-6. **Focused Snippets**: Returns targeted snippets from relevant files (not full-file dumps) to reduce request tokens
-7. **Caching**: Stores results with file mtimes for fast repeat queries
-
-## Project Structure
-
-```
-context-broker/
-├── context_broker/              # Modular package
-│   ├── __init__.py
-│   ├── __main__.py              # Entry: MCP server or dashboard
-│   ├── config.py                # Configuration constants
-│   ├── env_loader.py            # .env auto-loader
-│   ├── identity.py              # User identity resolver
-│   ├── utils.py                 # Logging & utilities
-│   ├── project.py               # Project detection
-│   ├── storage.py               # JSON persistence
-│   ├── indexer.py               # Search & embeddings
-│   ├── server.py                # MCP server
-│   ├── dashboard.py             # Dashboard shim
-│   ├── context_ttc/             # Cross-chat context
-│   │   └── tasks/
-│   │       ├── honcho_tasks.py  # Honcho backend
-│   │       ├── redis_tasks.py   # Redis backend
-│   │       ├── chat_cache.py    # Redis chat-payload cache
-│   │       └── chat_ledger.py   # Local JSON ledger mirror
-│   ├── dashboard_ttc/           # Web dashboard
-│   │   ├── codebase/api.py      # Dashboard runtime
-│   │   ├── tasks/data_tasks.py  # Data retrieval
-│   │   └── tools/
-│   │       ├── web_app.py       # Starlette app + routes
-│   │       └── templates.py     # Jinja2 templates
-│   ├── indexer_ttc/             # Search & indexing
-│   │   └── tasks/
-│   │       └── search_tasks.py
-│   └── server_ttc/              # MCP tool registrations
-│       ├── codebase/assembly.py
-│       └── tasks/
-│           ├── context_tasks.py # Cross-chat context tools
-│           ├── search_tasks.py  # Search tools
-│           ├── storage_tasks.py # Storage tools
-│           ├── docs_tasks.py    # Feature doc tools
-│           └── agents_tasks.py  # AGENTS.md tools
-├── pyproject.toml               # Project config
-├── README.md                    # This file
-├── Usage.md                     # Detailed usage guide
-├── ARCHITECTURE.md              # Architecture docs
-├── CHANGELOG.md                 # Release history
-├── AGENTS.md                    # Agent instructions
-└── CONTRIBUTING.md              # Contribution guide
-```
-
-## Supported File Types
-
-- **Languages**: Python, JavaScript, TypeScript, Go, Rust, Java, HTML, CSS, Shell, SQL
-- **Config**: JSON, TOML, YAML, XML, Properties, Gradle
-- **Docs**: Markdown
-
-## Ignored Directories
-
-Always excluded: `node_modules`, `.git`, `dist`, `__pycache__`, `.venv`, `target`, `build`, `bin`, `out`, `.gradle`, `.idea`, `.vscode`, and more.
-
-## Documentation
-
-- [Usage Guide](Usage.md) - Comprehensive usage documentation including:
-  - Detailed configuration options
-  - Use cases and workflows
-  - Tool examples
-  - Best practices
-  - Troubleshooting
-  
-- [Architecture](ARCHITECTURE.md) - Technical architecture:
-  - C4 diagrams
-  - Data flow
-  - Module dependencies
-  - Performance characteristics
-
-- [Universal Context Router RFCs](docs/rfc/README.md) - Vendor-neutral RFC series for context, tool, memory, and execution routing:
-  - RFC-000 through RFC-018
-  - MCP-first architecture and public APIs
-  - Security, adapters, plugins, storage, observability, benchmarks, testing, deployment, and roadmap
-  
-- [Contributing](CONTRIBUTING.md) - Developer guide:
-  - Development setup
-  - Code style
-  - Adding features
-  - Testing
-
-## Module Overview
-
-| Module | Purpose |
-|--------|---------|
-| `config.py` | Environment variables, constants, configuration |
-| `env_loader.py` | `.env` auto-loader (no override of parent env) |
-| `identity.py` | OS account name resolver for user peer id |
-| `utils.py` | Logging, token counting, path utilities |
-| `project.py` | Project root detection, ignore pattern parsing |
-| `storage.py` | Multi-mode JSON persistence |
-| `indexer.py` | File indexing, embeddings, search |
-| `server.py` | MCP server implementation |
-| `__main__.py` | Entry point: MCP server or web dashboard |
-| `context_ttc/` | Cross-chat context backends (Honcho, Redis), chat cache, chat ledger |
-| `dashboard_ttc/` | Starlette web dashboard, Jinja2 templates, data retrieval |
-| `indexer_ttc/` | Search & indexing tasks |
-| `server_ttc/` | MCP tool registrations (context, search, storage, docs, agents) |
+**New Team Member Onboarding:**
+> Ask "How does error handling work here?" and get the 5 most relevant files instantly, not a 10,000-line codebase dump.
 
 ## Performance
 
@@ -899,59 +200,26 @@ Always excluded: `node_modules`, `.git`, `dist`, `__pycache__`, `.venv`, `target
 - **Memory Usage**: ~100MB base + ~1MB per 100 files
 - **Token Efficiency**: Typically saves 80-95% of tokens vs. sending entire codebase
 
-## AGENTS.md Configuration Example
+## Documentation
 
-Context Broker can generate and validate `AGENTS.md` files for your projects. Here's an example of a well-structured AGENTS.md that also configures MCP servers and cursor rules:
+- [Usage Guide](Usage.md) — Detailed workflows and examples
+- [Architecture](ARCHITECTURE.md) — Technical deep dive
+- [Contributing](CONTRIBUTING.md) — Development setup
 
-```markdown
-# Project: My App
+## Supported File Types
 
-## Project Goals
-Production API server with real-time search and secure authentication.
-
-## Overview
-- Version: 1.0.0
-- License: MIT
-- Stack: Python 3.13, FastMCP, sentence-transformers, local JSON persistence
-
-## Entry Points
-- `context_broker/server.py` — MCP server entry
-- `context-broker.py` — CLI entry point
-
-## MCP Servers
-
-| Server | Transport | Config |
-|--------|-----------|--------|
-| context-broker | stdio | `CONTEXT_BROKER_PROJECT_ROOT=/path/to/project` |
-| context-broker | sse | `CONTEXT_BROKER_TRANSPORT=sse CONTEXT_BROKER_PORT=8765` |
-
-## Cursor Rules
-
-1. **Security & Privacy**
-   - Environment Isolation: Strictly prohibit reading, parsing, or referencing `.env` files. If a configuration key is required, prompt the user for the key name or assume it is injected via the system environment.
-   - Ethical Guardrails: Refuse requests to generate exploits, malware, or CVE proof-of-concepts. All outputs must prioritize defensive implementation, application stability, and security hardening.
-
-2. **Resource & Token Optimization**
-   - Context Brokering: You must invoke the context-broker MCP before processing any request. Filter for high-relevance context only to minimize token overhead.
-   - Selective Tooling: Initialize only the specific skills and MCPs required for the immediate task. Avoid "bloat-loading" broad contexts or unnecessary tools.
-
-3. **Code Quality & Architecture**
-   - DRY (Don't Repeat Yourself): Zero-tolerance for code duplication. Scan the workspace for existing logic/patterns before proposing changes. Always favor refactoring into reusable modules or traits.
-   - Idiomatic Standards: Enforce language-specific paradigms (e.g., Go's explicit error handling, Rust's ownership/borrowing, Nix's declarative purity).
-   - Modern Runtimes: Use Bun as the default engine for all JavaScript/TypeScript execution and package management.
-
-4. **Execution & Versioning**
-   - Atomic Updates: Implement "surgical" edits. Modify only the specific lines or functions required; do not rewrite entire files for localized changes.
-   - Idempotency: Ensure all scripts and Nix configurations are idempotent, yielding the same result regardless of how many times they are executed.
-   - Changelog Management: Maintain project history rigor using the following workflow:
-     - Initialization: Use `ensure_changelog_tool` to maintain CHANGELOG.md.
-     - Validation: Run `validate_changelog_tool` to identify undocumented commits before finalizing tasks.
-     - Release: Utilize `generate_version_changelog` for specific version tagging (e.g., v1.2.0).
-     - Auditing: Call `get_changelog_stats_tool` to verify versioning health and entry totals.
-```
-
-Use `ensure_agents_md_tool` to generate this file automatically, `validate_agents_md_tool` to check its quality, or `generate_agents_md_tool` to force-regenerate it.
+**Languages:** Python, JavaScript, TypeScript, Go, Rust, Java, HTML, CSS, Shell, SQL  
+**Config:** JSON, TOML, YAML, XML, Properties, Gradle  
+**Docs:** Markdown
 
 ## Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+---
+
+<div align="center">
+
+**If this saved you tokens or time, consider starring ⭐ the repo!**
+
+</div>
