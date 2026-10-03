@@ -1,4 +1,14 @@
-# Universal Context Router Migration
+<div align="center">
+
+# 🌐 Universal Context Router — Migration Plan
+
+**From semantic-search MCP server to a universal context, tool, memory, and execution router.**
+
+[🏠 README](README.md) · [🏗️ Architecture](ARCHITECTURE.md) · [📜 RFCs](docs/rfc/README.md)
+
+</div>
+
+---
 
 Status: Phase 1-7 runtime foundations implemented
 Last updated: 2026-07-05

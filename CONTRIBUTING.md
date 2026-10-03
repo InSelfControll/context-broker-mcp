@@ -1,4 +1,17 @@
-# Contributing to Context Broker
+<div align="center">
+
+# 🤝 Contributing to Context Broker
+
+**Thanks for helping make AI coding assistants cheaper and smarter!**
+
+[![⭐ Star on GitHub](https://img.shields.io/github/stars/InSelfControll/context-broker-mcp?style=social)](https://github.com/InSelfControll/context-broker-mcp)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
+[🏠 README](README.md) · [📖 Usage](Usage.md) · [🏗️ Architecture](ARCHITECTURE.md)
+
+</div>
+
+---
 
 Thank you for your interest in contributing to Context Broker! This document provides guidelines and information for developers.
 

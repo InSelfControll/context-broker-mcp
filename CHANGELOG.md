@@ -6,14 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] — 2026-09-18
+## [0.4.0] — 2026-10-03
+
+### Changed
+
+- 📚 Docs/discoverability overhaul: rewrote `README.md` as a professional landing page (centered hero, badges, comparison table, collapsible deep-dive sections preserving all prior technical detail), added a looping token-savings demo GIF (`docs/assets/token-savings.gif`, generated with `docs/assets/make_gif.py`), added consistent badge/nav headers to `Usage.md`, `ARCHITECTURE.md`, `ARCHITECTURE_MIGRATION.md`, `CONTRIBUTING.md`, and `Example-AGENTS.md`, fixed `pyproject.toml` placeholder project URLs (now point at `InSelfControll/context-broker-mcp`), expanded package keywords, and added the missing MIT `LICENSE` file.
+
+## [0.4.0] — 2026-09-18
 
 ### Changed
 
 - 🔒 Session/peer id normalization is collision-free again at runtime: `identity_tools.normalize_identifier` appends a short digest when normalization is lossy, so distinct ids can never share a Redis key, ledger file, or Honcho session (`id_tools.safe_id` is now an alias). One-time key-format change: stored sessions whose ids contained special characters (e.g. spaces) are orphaned — their old keys were already ambiguous from id collisions. Dropped the orphaned `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX` knob (the live setting is `CONTEXT_BROKER_ROUTER_PLAN_CACHE_MAX_ENTRIES`, default 128).
 - ⬆️ Dependency refresh to latest Python modules (`uv lock --upgrade`): sentence-transformers 6.1.0, torch 2.14.0, transformers 5.17.0, scikit-learn 1.9.1, tiktoken 0.14.0, starlette 1.6.0, uvicorn 0.53.0. fastmcp intentionally pinned `<4` (3.4.7): fastmcp 4 / mcp 2.x adopt the 2026-07-28 protocol era, which removes server-initiated elicitation (SEP-2322) and breaks delegation/history consent, the shared-service proxy, and the downstream MCP client. Full suite passes (376 tests).
 
-## [Unreleased] — 2026-09-05
+## [0.4.0] — 2026-09-05
 
 ### Added
 
@@ -66,7 +72,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Close registry SQLite and Redis clients and bound optional Redis connection/read waits.
 - Update the Transformers dependency chain to address CVE-2026-9856; share JSON persistence and context identifier helpers across consumers.
 
-## [Unreleased] — 2026-08-22
+## [0.4.0] — 2026-08-22
 
 ### Added
 
@@ -92,7 +98,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 🐛 Token-history dedupe runs before writing immutable per-run files, stopping identical-report disk amplification.
 - 🐛 All numeric env settings parse through safe fallbacks — malformed values no longer crash startup.
 
-## [Unreleased] — 2026-08-09
+## [0.4.0] — 2026-08-09
 
 ### Security
 
@@ -119,7 +125,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - 🔧 ignore local worktrees — `55ac11f`
 
-## [Unreleased] — 2026-07-23
+## [0.4.0] — 2026-07-23
 
 ### Fixed
 
@@ -183,7 +189,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - 📝 Merge pull request #22 from InSelfControll/dependabot/uv/pyjwt-2.13.0 ([#22](https://github.com/InSelfControll/context-broker-mcp/pull/22)) — `0cd66f8`
 - 📝 Cursor/token savings history (#32) ([#32](https://github.com/InSelfControll/context-broker-mcp/pull/32)) — `5289bf9`
 
-## [Unreleased] — 2026-07-05
+## [0.4.0] — 2026-07-05
 
 ### Added
 

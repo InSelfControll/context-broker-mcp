@@ -1,4 +1,14 @@
-# Context Broker Architecture
+<div align="center">
+
+# 🏗️ Context Broker — Architecture
+
+**How the token-saving semantic search engine works under the hood.**
+
+[🏠 README](README.md) · [📖 Usage](Usage.md) · [🌐 UCR Migration](ARCHITECTURE_MIGRATION.md) · [🤝 Contributing](CONTRIBUTING.md)
+
+</div>
+
+---
 
 ## Executive Summary
 

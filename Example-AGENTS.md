@@ -1,4 +1,14 @@
-# AGENTS.md — AI agent instructions
+<div align="center">
+
+# 📄 Example AGENTS.md
+
+**A production-grade `AGENTS.md` template — the kind Context Broker generates and validates for your projects.**
+
+[🏠 README](README.md) · [📖 Usage](Usage.md) · [🤝 Contributing](CONTRIBUTING.md)
+
+</div>
+
+---
 
 This file tells coding agents how to work **in this repository** and what tools to use. **Copy it into the root of each new project** you create, then edit the [Project profile](#project-profile) and [Repository conventions](#repository-conventions-washield) sections; keep [MCP integration](#mcp-integration-portable) and [Context Broker](#context-broker-mcp-user-context-broker) unless your stack replaces them.
 
