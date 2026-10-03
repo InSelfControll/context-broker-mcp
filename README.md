@@ -41,6 +41,18 @@ Context Broker sits between your editor and your codebase as a **context layer**
 
 ### Installation
 
+**Option 1: Install directly from GitHub (Recommended)**
+
+```bash
+# Install globally with uv
+uv tool install https://github.com/InSelfControll/context-broker-mcp.git
+
+# Or with extras
+uv tool install "https://github.com/InSelfControll/context-broker-mcp.git[dashboard,integrations]"
+```
+
+**Option 2: Clone and install locally**
+
 ```bash
 # Clone the repository
 git clone https://github.com/InSelfControll/context-broker-mcp.git
