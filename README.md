@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **This project is archived.** It has been replaced by [context-broker-rs](https://github.com/InSelfControll/context-broker-rs), a Rust rewrite that is faster, lighter, and actively maintained. This repository is read-only and receives no further updates.
+
 <div align="center">
 
 # 🧠 Context Broker
